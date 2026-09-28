@@ -22,14 +22,19 @@ Use hard limits where the platform has them and automation where it does not:
 | Function executions | two metric alerts, 1,500 executions in 5 minutes (burst) and 20,000 in 24 hours (sustained), trigger an action group whose Logic App stops the app | automated |
 | All resources | monthly budget: e-mail at 20 %, forecast alert, kill switch at 100 % | automated, lags by hours |
 
-The Logic App runs as its own managed identity, which holds Website Contributor on the function app and on
-nothing else.
+The Logic App runs as its own managed identity. On the function app it holds a custom role that allows
+`sites/read`, `sites/stop/action` and `sites/start/action` and nothing else; the built-in Website Contributor role
+would also let it change settings and deploy code. The bootstrap script creates the role, because the pipeline's
+Contributor role cannot create role definitions.
 
 ## Consequences
 
 - A burst runs for a few minutes at most before the app stops itself. Steady traffic just under the burst
   threshold (up to about 5 requests per second) is caught by the 24-hour alert within a day, long before it
   would cost more than a few euros; the budget is the backstop behind both.
+- The kill switch doubles as a denial-of-service lever: about 1,500 requests in 5 minutes take the counter
+  offline. Here the availability of a visit count is worth less than an unbounded bill. A service that must stay
+  up would rate-limit per client in front of the API (Azure Front Door with a WAF rule, a paid option).
 - Someone has to restart a stopped app with `az functionapp start`. This is intended: a person should look at the
   traffic first, and should wait until the alert has resolved. Flood metrics arrive in delayed batches, and an
   app restarted right after a flood was stopped a second time by the same alert.

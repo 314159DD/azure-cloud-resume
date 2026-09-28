@@ -4,9 +4,9 @@
 [![Deploy](https://github.com/314159DD/azure-cloud-resume/actions/workflows/deploy.yml/badge.svg)](https://github.com/314159DD/azure-cloud-resume/actions/workflows/deploy.yml)
 
 My resume, hosted as a small Azure workload: a static site plus a visitor counter API. I built it the way I
-would build a client system. There are no secrets in the code, the configuration or GitHub, every resource is
-defined in Bicep, spending has hard limits, and the behaviour described below was tested against the live
-deployment.
+would build a client system. There are no secrets in the code, the configuration or GitHub, the workload's
+resources are defined in Bicep, spending has hard limits, and the behaviour described below was tested against
+the live deployment, with the results and scripts in [docs/verification.md](docs/verification.md).
 
 Live: https://victorious-glacier-013ec1c0f.6.azurestaticapps.net
 
@@ -23,7 +23,7 @@ flowchart LR
         cosmos[(Cosmos DB<br/>free tier · 1000 RU/s cap)]
         st[(Storage<br/>deployment package)]
         appi[Application Insights<br/>+ Log Analytics · 0.1 GB/day cap]
-        alert{{Execution-flood alert}}
+        alert{{Execution alerts<br/>burst · sustained}}
         budget{{Budget}}
         ks[Logic App kill switch]
     end
@@ -35,7 +35,7 @@ flowchart LR
     func -. metrics .-> alert
     alert --> ks
     budget --> ks
-    ks -->|"Website Contributor on the function only: POST /stop"| func
+    ks -->|"custom role: read, stop, start (this app only)"| func
 
     gh[GitHub Actions] -->|OIDC, no secret| rg
 ```
@@ -53,15 +53,17 @@ flowchart LR
 ## Security model
 
 Storage (`allowSharedKeyAccess: false`), Cosmos DB and Application Insights (`disableLocalAuth: true`) reject
-key-based access, and Azure Policy assignments on the resource group deny turning keys back on. The function
+key-based access, and Azure Policy assignments on the resource group deny turning keys back on. The policies
+stop accidents and the pipeline, which cannot remove them; a subscription Owner still could. The function
 reaches all three services through its managed identity, so app settings, the repository and GitHub hold no
 credentials. FTP and SCM publishing with username and password is switched off.
 
 Each of the function's three data-plane roles is scoped to a single resource, and the Cosmos DB role to a single
-database. The kill switch can stop and start the one function app and nothing else.
+database. The kill switch holds a custom role on the function app that allows read, stop and start, and nothing
+else.
 
 GitHub Actions signs in via OIDC, and Azure trusts one subject: the `production` environment, which only accepts
-deployments from `main` after CI has passed. On the resource group the pipeline is Contributor plus RBAC
+deployments from `main` after CI has passed and after a required reviewer approves the run. On the resource group the pipeline is Contributor plus RBAC
 administrator, and an ABAC condition limits the second role to the three Azure RBAC roles the templates assign,
 so it cannot make itself Owner. Pull requests get no Azure access at all, because Azure authorizes a `what-if`
 preview like a deployment. One gap is documented in [ADR 3](docs/adr/0003-oidc-and-constrained-rbac-for-ci.md):
@@ -90,13 +92,14 @@ being flooded:
 
 ## Verified behaviour
 
-Each of these was checked against the deployed system:
+Each of these was checked against the deployed system. Times, numbers and the scripts to repeat them are in
+[docs/verification.md](docs/verification.md).
 
 | Behaviour | How it was checked |
 |---|---|
-| No lost updates | 20 concurrent POSTs raise the counter by exactly 20 (part of the post-deploy smoke test, which uses a separate counter so the public number stays untouched) |
+| No lost updates | 20 concurrent POSTs return 20 distinct counts (part of the post-deploy smoke test, which uses a separate counter so the public number stays untouched) |
 | No fallback to keys | Removing the Cosmos data role makes the API fail at once; a redeploy restores the role and the API |
-| Keys stay off | Turning on shared-key access on Storage or local auth on Cosmos DB is rejected with `RequestDisallowedByPolicy`, even for an Owner |
+| Keys stay off | Turning on shared-key access on Storage or local auth on Cosmos DB is rejected with `RequestDisallowedByPolicy`; the **Verify guardrails** workflow repeats this as the deploy identity, together with a refused attempt to grant itself Owner |
 | Preview needs write access | A read-only identity with `*/read` and `deployments/whatIf/action` was refused by `what-if` for lack of write permission, which is why pull requests get no Azure access |
 | Drift detection | A manually deleted role shows up as `Create` in `what-if`, and a redeploy restores it |
 | CORS | The site's origin receives `Access-Control-Allow-Origin`; a foreign origin does not |
@@ -112,18 +115,21 @@ and the templates describe both.
 
 You need the Azure CLI, Node 22 and an Azure subscription where you are Owner.
 
-1. Run the bootstrap once. It creates the resource group, the OIDC identity, the constrained role assignments and
-   the policy assignments:
+1. Run the bootstrap once. Everything the pipeline must not be able to change is created here, imperatively and
+   with Owner rights: the resource group, the OIDC identity, its constrained role assignments, the kill switch's
+   custom role and the policy assignments.
    ```powershell
    az login
    ./scripts/bootstrap.ps1 -GitHubRepo <owner>/<repo>
    ```
 2. In the repository settings, add the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`
    (the bootstrap prints them) and `AZURE_RESOURCE_GROUP=rg-cloudresume`, and create an environment named
-   `production` whose deployment branches are limited to `main`. These values identify resources; they grant no
-   access. `BUDGET_ALERT_EMAIL` is a repository secret only so the address is masked in public workflow logs.
-3. Push to `main`. After CI passes, `deploy.yml` writes a `what-if` summary, provisions the infrastructure, deploys
-   the API and the site, and runs [`scripts/smoke-test.sh`](scripts/smoke-test.sh) against the live system.
+   `production` whose deployment branches are limited to `main` and which has a required reviewer. These values
+   identify resources; they grant no access. `BUDGET_ALERT_EMAIL` is a repository secret only so the address is
+   masked in public workflow logs.
+3. Push to `main`. After CI passes, `deploy.yml` writes a `what-if` summary, waits for the reviewer, provisions the
+   infrastructure, deploys the API and the site, and runs [`scripts/smoke-test.sh`](scripts/smoke-test.sh) against
+   the live system.
 
 Pull requests and pushes run lint, typecheck, unit tests, `npm audit`, Bicep build and lint, and PSRule for Azure.
 
@@ -139,6 +145,10 @@ excluded on purpose, each with its reason in [`ps-rule.yaml`](ps-rule.yaml):
 - There are no private endpoints or VNet integration, because both are billed per hour. Disabling key auth and
   granting access only through RBAC compensates for part of that.
 - The Cosmos DB free tier comes without an SLA.
+- The kill switch is also a denial-of-service lever: anyone who sends about 1,500 requests in 5 minutes takes the
+  counter offline until someone restarts it. For a resume that is the right trade (availability of a visit count
+  against an open-ended bill). A workload that must stay up would put Azure Front Door with a WAF rate-limit rule
+  in front of the API, which costs a monthly base fee.
 - Data stays in Germany West Central. The Static Web Apps Free plan is not offered there, so the site resource
   lives in East US 2; the content is served globally either way.
 
@@ -148,9 +158,10 @@ excluded on purpose, each with its reason in [`ps-rule.yaml`](ps-rule.yaml):
 api/                 Azure Function (TypeScript): domain logic, Cosmos adapter, tests
 web/                 Static site (EN/DE), security headers
 infra/               Bicep: main.bicep + modules (monitoring, storage, cosmos, functionapp, staticwebapp, killswitch, budget)
-scripts/             bootstrap, teardown, smoke test, what-if summary
+scripts/             bootstrap, teardown, smoke test, guardrail and flood tests, what-if summary
 tools/               pinned deployment tooling (Static Web Apps CLI)
 docs/adr/            Architecture decision records
+docs/verification.md What was tested against the live system, with results
 .github/workflows/   CI, deploy, CodeQL
 ```
 
