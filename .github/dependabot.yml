@@ -8,7 +8,15 @@ updates:
       azure-sdk:
         patterns: ["@azure/*"]
       tooling:
-        patterns: ["eslint*", "@eslint/*", "typescript*", "@types/*"]
+        patterns: ["eslint*", "@eslint/*", "typescript*"]
+    ignore:
+      # Type definitions must match the Node.js major the function runs on (22).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: npm
+    directory: /tools
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

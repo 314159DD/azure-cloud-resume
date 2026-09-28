@@ -1,0 +1,26 @@
+# Proves the guardrails from the pipeline's own identity: every check tries a change that must be refused
+# (enable keys, grant itself Owner), so a passing run changes nothing. Manual, in the protected environment.
+name: Verify guardrails
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify guardrails as the deploy identity
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      id-token: write # OIDC token for azure/login, no secret involved
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - run: ./scripts/verify-guardrails.sh "${{ vars.AZURE_RESOURCE_GROUP }}" | tee -a "$GITHUB_STEP_SUMMARY"

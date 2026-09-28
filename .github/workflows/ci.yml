@@ -7,6 +7,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch: # a manual CI run on main also triggers a deployment
 
 permissions:
   contents: read

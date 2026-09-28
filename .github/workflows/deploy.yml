@@ -1,5 +1,6 @@
-# Continuous deployment. Runs only after CI succeeded on a push to main (or manually), in the "production"
-# environment, which is restricted to the main branch and is the only subject Azure trusts.
+# Continuous deployment. Runs only after CI succeeded on main (after a push, or a manual CI run), in the
+# "production" environment: restricted to the main branch, gated by a required reviewer, and the only
+# subject Azure trusts. The what-if preview is in the job summary before the reviewer approves.
 name: Deploy
 
 on:
@@ -7,7 +8,6 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,8 +20,8 @@ jobs:
   deploy:
     name: Deploy to production
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     environment:
       name: production
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The commit CI tested, not whatever main points to now.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
