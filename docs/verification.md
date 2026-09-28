@@ -122,3 +122,10 @@ Later runs, after the production environment got a required reviewer:
 | [36484234169](https://github.com/314159DD/azure-cloud-resume/actions/runs/36484234169) | Deployed, but the smoke test failed: two of the 20 concurrent POSTs got HTTP 503 while the function restarted after the code deployment. App Insights showed no 503 from the handler, so the platform answered before the worker did. The smoke test now retries transient failures per request. |
 | [36485803598](https://github.com/314159DD/azure-cloud-resume/actions/runs/36485803598) | Green, smoke test `98 -> 118` with 20 distinct counts. |
 | [36485870155](https://github.com/314159DD/azure-cloud-resume/actions/runs/36485870155) (Verify guardrails) | Green as the deploy identity: enabling keys on Storage and Cosmos DB refused with `RequestDisallowedByPolicy`, granting itself Owner refused with `AuthorizationFailed`, keys and basic publishing credentials off. |
+
+With the staging environment (pull request #3):
+
+| Run | Result |
+|---|---|
+| [36497866294](https://github.com/314159DD/azure-cloud-resume/actions/runs/36497866294) | Staging, first deployment into its new resource group: green, smoke test `0 -> 20` with the staging identity. Production, first attempt: the Bicep deployment failed with `PreconditionFailed`, "an operation in progress which requires exclusive lock" on the production Cosmos DB account; nothing was changed and the live API kept answering. The lock had cleared a few minutes later (`provisioningState: Succeeded`); re-running the failed job succeeded with smoke test `158 -> 178`. |
+| [36500105462](https://github.com/314159DD/azure-cloud-resume/actions/runs/36500105462) (Verify guardrails) | Green in both environments, each with its own deploy identity: 7 of 7 checks passed in staging and in production. |
