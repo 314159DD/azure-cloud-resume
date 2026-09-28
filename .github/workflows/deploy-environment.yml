@@ -1,0 +1,114 @@
+# Deploys one environment: what-if, infrastructure, API, site, then verification against the live system.
+# Called by deploy.yml for staging and production. Each GitHub environment carries its own
+# AZURE_CLIENT_ID and AZURE_RESOURCE_GROUP, so each run signs in as that environment's identity (its own
+# OIDC subject) and can only touch that environment's resource group.
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment and parameter file name (infra/environments/<name>.bicepparam)
+        required: true
+        type: string
+      ref:
+        description: Commit to deploy (the one CI tested)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.infra.outputs.site_url }}
+    permissions:
+      contents: read
+      id-token: write # OIDC token for azure/login, no secret involved
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      PARAMETERS: infra/environments/${{ inputs.environment }}.bicepparam
+      BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }} # a secret only so it is masked in public logs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            api/package-lock.json
+            tools/package-lock.json
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Preview infrastructure changes (what-if)
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters "$PARAMETERS" \
+            --exclude-change-types NoChange Ignore \
+            --no-pretty-print --output json > what-if.json
+          python3 scripts/what_if_summary.py what-if.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy infrastructure (Bicep)
+        id: infra
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "deploy-${GITHUB_RUN_NUMBER}" \
+            --template-file infra/main.bicep \
+            --parameters "$PARAMETERS" \
+            --query properties.outputs --output json)
+          # Output names are camelCase on purpose: ARM rewrites the casing of all-caps names.
+          jq -e '.functionAppName.value and .staticWebAppName.value and .apiBaseUrl.value and .siteUrl.value' \
+            <<< "$outputs" > /dev/null || { echo "::error::deployment outputs missing"; exit 1; }
+          echo "function_app=$(jq -r .functionAppName.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "static_web_app=$(jq -r .staticWebAppName.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(jq -r .apiBaseUrl.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "site_url=$(jq -r .siteUrl.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+
+      - name: Build API
+        working-directory: api
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      - name: Deploy API (Flex Consumption)
+        uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
+        with:
+          app-name: ${{ steps.infra.outputs.function_app }}
+          package: api
+          sku: flexconsumption
+          respect-funcignore: true
+
+      - name: Deploy site
+        env:
+          API_BASE_URL: ${{ steps.infra.outputs.api_base_url }}
+        run: |
+          echo "window.CLOUDRESUME_API = \"${API_BASE_URL}\";" > web/config.js
+          # Narrow the CSP from any *.azurewebsites.net host to this deployment's API origin.
+          api_origin=$(grep -oE '^https://[^/]+' <<< "$API_BASE_URL")
+          jq --arg origin "$api_origin" \
+            '.globalHeaders["Content-Security-Policy"] |= (split("https://*.azurewebsites.net") | join($origin))' \
+            web/staticwebapp.config.json > csp.json && mv csp.json web/staticwebapp.config.json
+          grep -q "connect-src 'self' $api_origin;" web/staticwebapp.config.json
+          # The deployment token is read at run time with the OIDC login instead of being stored in GitHub.
+          token=$(az staticwebapp secrets list --name "${{ steps.infra.outputs.static_web_app }}" \
+            --resource-group "$RESOURCE_GROUP" --query properties.apiKey --output tsv)
+          echo "::add-mask::$token"
+          npm ci --prefix tools
+          tools/node_modules/.bin/swa deploy ./web --deployment-token "$token" --env production
+
+      - name: Verify the live system
+        run: ./scripts/smoke-test.sh "${{ steps.infra.outputs.api_base_url }}" "${{ steps.infra.outputs.site_url }}"
