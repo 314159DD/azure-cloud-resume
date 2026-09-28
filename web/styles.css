@@ -1,0 +1,42 @@
+:root {
+  --bg: #fafaf8;
+  --fg: #1c1c1a;
+  --muted: #66665f;
+  --line: #e4e4de;
+  --accent: #0b6bcb;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151514; --fg: #ececea; --muted: #a3a39c; --line: #2c2c2a; --accent: #6cb2f5; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 44rem; margin: 0 auto; padding: 3rem 1rem 4rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover, a:focus-visible { text-decoration: underline; }
+h1 { font-size: 2.2rem; margin: 0; letter-spacing: -0.02em; }
+h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 2.5rem 0 0.75rem; }
+h3 { font-size: 1rem; margin: 1.25rem 0 0.25rem; }
+p { margin: 0 0 0.5rem; }
+.role { color: var(--muted); margin: 0.25rem 0 0.25rem; }
+.contact { font-size: 0.9rem; color: var(--muted); overflow-wrap: anywhere; }
+.caps { display: grid; grid-template-columns: 11rem 1fr; gap: 0.4rem 1rem; margin: 0; }
+.caps dt { font-weight: 600; }
+.caps dd { margin: 0; }
+@media (max-width: 36rem) { .caps { grid-template-columns: 1fr; } .caps dd { margin-bottom: 0.5rem; } }
+.timeline { list-style: none; padding: 0; margin: 0; }
+.timeline li { display: grid; grid-template-columns: 7.5rem 1fr; gap: 1rem; margin-bottom: 0.4rem; }
+.when { color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 36rem) { .timeline li { grid-template-columns: 1fr; gap: 0; } }
+.lang { display: flex; justify-content: flex-end; gap: 0.25rem; }
+.lang button {
+  font: inherit; font-size: 0.8rem; padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.lang button[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+.lang button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
