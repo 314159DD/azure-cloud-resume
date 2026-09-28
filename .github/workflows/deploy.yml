@@ -69,10 +69,13 @@ jobs:
             --template-file infra/main.bicep \
             --parameters infra/main.bicepparam \
             --query properties.outputs --output json)
-          echo "function_app=$(jq -r .AZURE_FUNCTION_APP_NAME.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
-          echo "static_web_app=$(jq -r .AZURE_STATIC_WEB_APP_NAME.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
-          echo "api_base_url=$(jq -r .API_BASE_URL.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
-          echo "site_url=$(jq -r .SITE_URL.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          # Output names are camelCase on purpose: ARM rewrites the casing of all-caps names.
+          jq -e '.functionAppName.value and .staticWebAppName.value and .apiBaseUrl.value and .siteUrl.value' \
+            <<< "$outputs" > /dev/null || { echo "::error::deployment outputs missing"; exit 1; }
+          echo "function_app=$(jq -r .functionAppName.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "static_web_app=$(jq -r .staticWebAppName.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(jq -r .apiBaseUrl.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "site_url=$(jq -r .siteUrl.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
 
       - name: Build API
         working-directory: api

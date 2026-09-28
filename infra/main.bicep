@@ -88,7 +88,7 @@ module budget 'modules/budget.bicep' = {
   }
 }
 
-output AZURE_FUNCTION_APP_NAME string = api.outputs.functionAppName
-output AZURE_STATIC_WEB_APP_NAME string = site.outputs.name
-output API_BASE_URL string = api.outputs.apiBaseUrl
-output SITE_URL string = 'https://${site.outputs.defaultHostname}'
+output functionAppName string = api.outputs.functionAppName
+output staticWebAppName string = site.outputs.name
+output apiBaseUrl string = api.outputs.apiBaseUrl
+output siteUrl string = 'https://${site.outputs.defaultHostname}'
