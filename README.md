@@ -49,6 +49,24 @@ flowchart LR
 | IaC | Bicep modules, checked by PSRule for Azure | Reviewable and reproducible |
 | CI/CD | GitHub Actions with OIDC | No stored credential, no cloud access for pull requests, and a deployer that cannot make itself Owner ([ADR 3](docs/adr/0003-oidc-and-constrained-rbac-for-ci.md)) |
 | Cost | Scale caps, budget, automatic kill switch | Spending stops on its own when traffic looks like abuse ([ADR 4](docs/adr/0004-cost-guardrails-and-kill-switch.md)) |
+| Environments | Staging, then production, from one template | Every change runs on Azure before it reaches production ([ADR 6](docs/adr/0006-staging-environment.md)) |
+| Networking | Public endpoints with Entra-only access; private variant tested | Private endpoints cost per hour; the VNet variant is one parameter away and was deployed and verified ([ADR 7](docs/adr/0007-private-networking-variant.md)) |
+| Operations | Workbook as code, runbook | What to look at and what to do when the kill switch fires ([runbook](docs/runbook.md)) |
+
+## Environments and delivery
+
+```mermaid
+flowchart LR
+    pr[Pull request] --> ci{{"CI: lint, typecheck, unit tests,<br/>Cosmos DB emulator tests,<br/>Bicep, PSRule, CodeQL"}}
+    ci -->|merge to main| ci2{{CI on main}}
+    ci2 --> stg[Staging<br/>own RG, identity, OIDC subject<br/>Cosmos DB serverless]
+    stg -->|smoke test passed| gate([Required reviewer])
+    gate --> prod[Production<br/>Cosmos DB free tier]
+```
+
+Both environments come from `infra/main.bicep`; they differ only in `infra/environments/*.bicepparam`. Each deploy
+runs what-if, the Bicep deployment, the API and site deployments and the smoke test against the live system.
+Pull requests get no Azure access; the Cosmos DB adapter is tested against the Linux emulator in CI instead.
 
 ## Security model
 
@@ -117,36 +135,43 @@ and the templates describe both.
 
 You need the Azure CLI, Node 22 and an Azure subscription where you are Owner.
 
-1. Run the bootstrap once. Everything the pipeline must not be able to change is created here, imperatively and
-   with Owner rights: the resource group, the OIDC identity, its constrained role assignments, the kill switch's
-   custom role and the policy assignments.
+1. Run the bootstrap once per environment. Everything the pipeline must not be able to change is created here,
+   imperatively and with Owner rights: the resource group, the environment's OIDC identity, its constrained role
+   assignments, the kill switch's custom role and the policy assignments.
    ```powershell
    az login
-   ./scripts/bootstrap.ps1 -GitHubRepo <owner>/<repo>
+   ./scripts/bootstrap.ps1 -Environment staging    -ResourceGroup rg-cloudresume-staging -GitHubRepo <owner>/<repo>
+   ./scripts/bootstrap.ps1 -Environment production -ResourceGroup rg-cloudresume         -GitHubRepo <owner>/<repo>
    ```
-2. In the repository settings, add the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`
-   (the bootstrap prints them) and `AZURE_RESOURCE_GROUP=rg-cloudresume`, and create an environment named
-   `production` whose deployment branches are limited to `main` and which has a required reviewer. These values
-   identify resources; they grant no access. `BUDGET_ALERT_EMAIL` is a repository secret only so the address is
-   masked in public workflow logs.
-3. Push to `main`. After CI passes, `deploy.yml` waits for the reviewer, then writes a `what-if` summary, provisions
-   the infrastructure, deploys the API and the site, and runs [`scripts/smoke-test.sh`](scripts/smoke-test.sh)
-   against the live system. The preview comes after the approval because `what-if` needs the deploy identity's
-   write permission, which only exists inside the protected environment.
+2. In the repository settings, create the environments `staging` and `production`, both limited to the `main`
+   branch, production with a required reviewer. Set `AZURE_CLIENT_ID` and `AZURE_RESOURCE_GROUP` on each
+   environment and `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` on the repository (the bootstrap prints them).
+   These values identify resources; they grant no access. `BUDGET_ALERT_EMAIL` is a repository secret only so the
+   address is masked in public workflow logs.
+3. Push to `main`. After CI passes, `deploy.yml` deploys staging and runs the smoke test there, then waits for the
+   reviewer and does the same for production. Each environment's `what-if` summary is on the run page. For
+   production it comes after the approval, because `what-if` needs the deploy identity's write permission, which
+   only exists inside the protected environment; the approval rests on staging having passed with the same commit.
 
-Pull requests and pushes run lint, typecheck, unit tests, `npm audit`, Bicep build and lint, and PSRule for Azure.
+Pull requests and pushes run lint, typecheck, unit tests, the Cosmos DB emulator integration tests, `npm audit`,
+Bicep build and lint, and PSRule for Azure over every environment's parameter file.
 
-For local development run `cd api && npm ci && npm test`. To remove everything, run `./scripts/teardown.ps1`.
+For local development run `cd api && npm ci && npm test` (integration tests: start the emulator and run
+`COSMOS_EMULATOR_ENDPOINT=http://localhost:8081 npm run test:integration`). To remove an environment, run
+`./scripts/teardown.ps1 -ResourceGroup <name>`.
 
 ## Deliberate trade-offs
 
-This is a single-region workload on free tiers. PSRule for Azure passes all 120 rules that apply. Nine rules are
-excluded on purpose, each with its reason in [`ps-rule.yaml`](ps-rule.yaml):
+This is a single-region workload on free tiers. PSRule for Azure passes every applicable rule for all three
+parameter files (production, staging and the private-network variant). Ten rules are excluded on purpose, each
+with its reason in [`ps-rule.yaml`](ps-rule.yaml):
 
 - There is no zone or geo redundancy for Functions, Cosmos DB, Storage or Log Analytics. A visitor counter can
   sit out a regional outage, and redundancy would multiply the cost.
-- There are no private endpoints or VNet integration, because both are billed per hour. Disabling key auth and
-  granting access only through RBAC compensates for part of that.
+- Production and staging use public endpoints, because private endpoints are billed per hour. Disabling key auth
+  and granting access only through RBAC compensates for part of that. The private variant
+  ([ADR 7](docs/adr/0007-private-networking-variant.md)) was deployed and verified in a throwaway resource group;
+  in it the app subnet keeps default outbound access instead of paying for a NAT gateway.
 - The Cosmos DB free tier comes without an SLA.
 - The kill switch is also a denial-of-service lever: anyone who sends about 1,500 requests in 5 minutes takes the
   counter offline until someone restarts it. For a resume that is the right trade (availability of a visit count
@@ -158,14 +183,16 @@ excluded on purpose, each with its reason in [`ps-rule.yaml`](ps-rule.yaml):
 ## Repository layout
 
 ```
-api/                 Azure Function (TypeScript): domain logic, Cosmos adapter, tests
+api/                 Azure Function (TypeScript): domain logic, Cosmos adapter, unit and emulator integration tests
 web/                 Static site (EN/DE), security headers
-infra/               Bicep: main.bicep + modules (monitoring, storage, cosmos, functionapp, staticwebapp, killswitch, budget)
+infra/               Bicep: main.bicep, modules (monitoring, storage, cosmos, network, functionapp, staticwebapp,
+                     killswitch, workbook, budget) and environments/*.bicepparam
 scripts/             bootstrap, teardown, smoke test, guardrail and flood tests, what-if summary
 tools/               pinned deployment tooling (Static Web Apps CLI)
 docs/adr/            Architecture decision records
+docs/runbook.md      What to do when the kill switch fires
 docs/verification.md What was tested against the live system, with results
-.github/workflows/   CI, deploy, CodeQL
+.github/workflows/   CI, deploy (staging, then production), guardrail verification, CodeQL
 ```
 
 ## How this was built
