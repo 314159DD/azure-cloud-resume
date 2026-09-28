@@ -75,7 +75,11 @@ if ((Invoke-Az group exists -n $ResourceGroup) -ne 'true') {
 $rgId = Invoke-Az group show -n $ResourceGroup --query id -o tsv
 
 # 3) Deploy identity: GitHub "production" environment only.
-$deploy = Set-GitHubIdentity $AppName "repo:${GitHubRepo}:environment:${Environment}"
+#    GitHub issues subjects with immutable owner and repository IDs ("repo:owner@123/name@456:..."), so a
+#    repository deleted and recreated under the same name does not inherit the trust.
+$repoInfo = Invoke-RestMethod "https://api.github.com/repos/$GitHubRepo"
+$subjectRepo = "$($repoInfo.owner.login)@$($repoInfo.owner.id)/$($repoInfo.name)@$($repoInfo.id)"
+$deploy = Set-GitHubIdentity $AppName "repo:${subjectRepo}:environment:${Environment}"
 
 $assignableRoles = @(
   'b7e6dc6d-f1e8-4753-8033-0f276bb0955b', # Storage Blob Data Owner      (function -> host storage)

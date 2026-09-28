@@ -13,7 +13,9 @@ pull requests would also be useful.
 
 - There is no client secret. One Entra application trusts GitHub's OIDC tokens for a single subject, the
   `production` environment. That environment only accepts deployments from `main`, and the deploy workflow only
-  runs after CI has passed on the same commit.
+  runs after CI has passed on the same commit. GitHub puts immutable owner and repository IDs into the subject
+  (`repo:314159DD@34370107/azure-cloud-resume@1393520300:environment:production`), so a repository recreated under
+  the same name would not inherit the trust; the bootstrap script looks the IDs up.
 - On the resource group the identity is Contributor plus Role Based Access Control Administrator. An ABAC condition
   limits the second role to assigning and removing the three Azure RBAC roles the templates use.
 - Azure Policy assignments on the resource group deny re-enabling key-based access on Storage, Cosmos DB and
