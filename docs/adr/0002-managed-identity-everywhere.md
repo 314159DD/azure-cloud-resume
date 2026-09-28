@@ -11,9 +11,9 @@ cannot be scoped or audited per caller.
 
 ## Decision
 
-- One **user-assigned** managed identity for the function. It exists before the app, so its role assignments
+- One user-assigned managed identity for the function. It exists before the app, so its role assignments
   are in place before the first start (a system-assigned identity would start without permissions).
-- Key-based access is **disabled** on every dependency: `allowSharedKeyAccess: false` (Storage),
+- Key-based access is disabled on every dependency: `allowSharedKeyAccess: false` (Storage),
   `disableLocalAuth: true` (Cosmos DB, Application Insights). A leaked key would not work.
 - Least-privilege roles, scoped to the single resource or database:
   Storage Blob Data Owner, Monitoring Metrics Publisher, Cosmos DB Built-in Data Contributor (database scope,

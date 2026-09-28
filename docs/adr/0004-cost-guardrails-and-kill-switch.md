@@ -1,31 +1,41 @@
-# 4. Cost guardrails that stop, not just warn
+# 4. Cost guardrails with an automatic stop
 
 - Status: accepted
 - Date: 2026-09-28
 
 ## Context
 
-Budgets and alerts only notify, and cost data lags by hours. A public, anonymous endpoint on a usage-billed
-plan can be flooded. The question is not "will we be notified" but "what stops the spend".
+Budgets and alerts only send notifications, and Azure cost data arrives hours late. The API is public,
+anonymous and billed per use, so a flood of requests turns directly into cost. Something has to stop the spending
+without waiting for a person to read an e-mail.
 
 ## Decision
 
-Hard limits where the platform offers them, automation where it does not:
+Use hard limits where the platform has them and automation where it does not:
 
-| Resource | Guardrail | Type |
+| Resource | Limit | Type |
 |---|---|---|
-| Cosmos DB | free tier + `totalThroughputLimit: 1000` (excess gets HTTP 429) | hard |
+| Cosmos DB | free tier and `totalThroughputLimit: 1000`; excess requests get HTTP 429 | hard |
 | Log Analytics | 0.1 GB daily ingestion cap | hard |
-| Static Web Apps | Free plan (cannot incur charges) | hard |
+| Static Web Apps | Free plan, which cannot incur charges | hard |
 | Function compute | 1 instance, 10 concurrent requests | hard |
-| Function executions | metric alert (1500 executions / 5 min) -> action group -> Logic App stops the app | automated |
-| Everything | monthly budget: e-mail at 20 %, forecast alert, kill switch at 100 % | automated, lagging |
+| Function executions | two metric alerts, 1,500 executions in 5 minutes (burst) and 20,000 in 24 hours (sustained), trigger an action group whose Logic App stops the app | automated |
+| All resources | monthly budget: e-mail at 20 %, forecast alert, kill switch at 100 % | automated, lags by hours |
 
-The Logic App uses its own managed identity with **Website Contributor on the function app only**.
+The Logic App runs as its own managed identity, which holds Website Contributor on the function app and on
+nothing else.
 
 ## Consequences
 
-- Worst case is bounded to roughly minutes of flood traffic before the app stops itself.
-- A stopped app needs a human: `az functionapp start`. That is intentional.
-- The threshold must stay well below the throughput the scale caps allow. A first threshold of 3000 never fired
-  during a flood test because throttling kept the metric just under it; lowered to 1500 and re-tested.
+- A burst runs for a few minutes at most before the app stops itself. Steady traffic just under the burst
+  threshold (up to about 5 requests per second) is caught by the 24-hour alert within a day, long before it
+  would cost more than a few euros; the budget is the backstop behind both.
+- Someone has to restart a stopped app with `az functionapp start`. This is intended: a person should look at the
+  traffic first, and should wait until the alert has resolved. Flood metrics arrive in delayed batches, and an
+  app restarted right after a flood was stopped a second time by the same alert.
+- The alert threshold has to stay well below the throughput the scale caps allow. The first threshold of 3,000
+  never fired during a flood test, because throttling kept every 5-minute window just under it. At 1,500 the
+  alert fires.
+- The action group must be given the trigger's callback URL. With the workflow-level URL from
+  `listCallbackUrl()` the alert fired but no run started; the template now requests the trigger URL, and a
+  flood test confirmed that the app stops.

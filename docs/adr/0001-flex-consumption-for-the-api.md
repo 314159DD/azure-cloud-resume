@@ -13,7 +13,7 @@ for a human visitor, authenticate to its dependencies without secrets, and have 
 | Plan | Idle cost | Cold start | Identity-based host storage | Cost ceiling |
 |---|---|---|---|---|
 | Consumption (Linux, legacy) | none | yes | partial | none (scales freely) |
-| **Flex Consumption** | none | yes, mitigable with always-ready instances | yes | `maximumInstanceCount` + per-instance concurrency |
+| Flex Consumption | none | yes, mitigable with always-ready instances | yes | `maximumInstanceCount` + per-instance concurrency |
 | Premium (EP1) | always-on instance | no | yes | instance limits, but pays 24/7 |
 | App Service plan | always-on VM | no | yes | fixed, pays 24/7 |
 
