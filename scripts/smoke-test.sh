@@ -4,8 +4,10 @@
 #   2. the API reads and increments,
 #   3. concurrent increments are not lost (atomic counter),
 #   4. CORS admits the site's origin and nothing else.
-# Increments go to the separate "smoke" counter, so the public number on the site stays untouched and
-# real visitors during the run cannot make the test fail.
+# Increments go to the separate "smoke" counter, so the public number on the site stays untouched.
+# Atomicity is checked on this run's own responses: 20 concurrent increments must return 20 different
+# counts. A lost update would hand out the same count twice, while other callers hitting the counter at
+# the same time only shift the values and cannot make the check fail.
 set -euo pipefail
 
 API="${1:?usage: smoke-test.sh <api-base-url> <site-url>}"
@@ -26,16 +28,20 @@ before=$(count)
 [[ "$before" =~ ^[0-9]+$ ]] || fail "unexpected counter value: $before"
 
 echo "3) $PARALLEL concurrent increments"
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
 pids=()
-for _ in $(seq "$PARALLEL"); do
-  curl -fsS -o /dev/null -X POST "$COUNTER" &
+for i in $(seq "$PARALLEL"); do
+  curl -fsS -X POST "$COUNTER" -o "$out/$i.json" &
   pids+=("$!")
 done
 for pid in "${pids[@]}"; do
   wait "$pid" || fail "an increment request failed"
 done
+distinct=$(jq -r .count "$out"/*.json | sort -un | wc -l)
+(( distinct == PARALLEL )) || fail "$PARALLEL increments returned only $distinct distinct counts (lost update)"
 after=$(count)
-(( after - before == PARALLEL )) || fail "expected +$PARALLEL, got +$((after - before)) (lost updates?)"
+(( after - before >= PARALLEL )) || fail "counter moved by $((after - before)), expected at least $PARALLEL"
 
 echo "4) CORS"
 allowed=$(fetch -D - -o /dev/null -H "Origin: $SITE" "$API/visits" | tr -d '\r' | grep -i '^access-control-allow-origin:' || true)

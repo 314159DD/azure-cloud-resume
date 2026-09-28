@@ -81,10 +81,32 @@ $repoInfo = Invoke-RestMethod "https://api.github.com/repos/$GitHubRepo"
 $subjectRepo = "$($repoInfo.owner.login)@$($repoInfo.owner.id)/$($repoInfo.name)@$($repoInfo.id)"
 $deploy = Set-GitHubIdentity $AppName "repo:${subjectRepo}:environment:${Environment}"
 
+# Custom role for the kill switch: read, stop and start a web/function app, nothing else. Built-in roles
+# such as Website Contributor would also allow changing settings and deploying code. The ID is fixed
+# because the templates reference it (see infra/modules/killswitch.bicep).
+$stopperRoleId = 'a9567326-3f0c-4ec2-a9c0-8af4236ffe24'
+$stopperRole = @{
+  properties = @{
+    roleName         = 'Cloud Resume Function Stopper'
+    description      = 'Can stop and start the function app. Used by the cost kill switch.'
+    type             = 'CustomRole'
+    permissions      = @(@{
+      actions    = @('Microsoft.Web/sites/read', 'Microsoft.Web/sites/stop/action', 'Microsoft.Web/sites/start/action')
+      notActions = @()
+    })
+    assignableScopes = @($rgId)
+  }
+}
+$roleFile = New-TemporaryFile
+$stopperRole | ConvertTo-Json -Depth 5 | Set-Content $roleFile -Encoding utf8
+Invoke-Az rest --method put --body "@$roleFile" `
+  --url "https://management.azure.com$rgId/providers/Microsoft.Authorization/roleDefinitions/${stopperRoleId}?api-version=2022-04-01" -o none
+Remove-Item $roleFile
+
 $assignableRoles = @(
-  'b7e6dc6d-f1e8-4753-8033-0f276bb0955b', # Storage Blob Data Owner      (function -> host storage)
-  '3913510d-42f4-4e42-8a64-420c390055eb', # Monitoring Metrics Publisher (function -> App Insights)
-  'de139f84-1756-47ae-9be6-808fbbe84772'  # Website Contributor          (kill switch -> stop function)
+  'b7e6dc6d-f1e8-4753-8033-0f276bb0955b', # Storage Blob Data Owner       (function -> host storage)
+  '3913510d-42f4-4e42-8a64-420c390055eb', # Monitoring Metrics Publisher  (function -> App Insights)
+  $stopperRoleId                          # Cloud Resume Function Stopper (kill switch -> stop function)
 ) -join ', '
 $condition = "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR " +
   "(@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$assignableRoles})) AND " +
