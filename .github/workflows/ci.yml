@@ -1,0 +1,95 @@
+# Pull request gate: code quality, infrastructure validation and a what-if preview posted to the PR.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (lint, typecheck, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+
+  infra:
+    name: Infrastructure (Bicep build, PSRule)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Bicep build and lint
+        run: |
+          az bicep install
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep lint --file infra/main.bicep
+      - name: PSRule for Azure (Well-Architected rules)
+        uses: microsoft/ps-rule@46451b8f5258c41beb5ae69ed7190ccbba84112c # v2.9.0
+        with:
+          modules: PSRule.Rules.Azure
+          inputType: repository
+          option: ps-rule.yaml
+          summary: true
+        env:
+          BUDGET_ALERT_EMAIL: ci@example.invalid
+
+  what-if:
+    name: What-if preview
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [infra]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for azure/login, no secret involved
+      pull-requests: write
+    env:
+      BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }} # a secret only so it is masked in public logs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: az deployment group what-if
+        run: |
+          az deployment group what-if \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.bicepparam \
+            --exclude-change-types NoChange Ignore \
+            --no-pretty-print --output json > what-if.json
+          python3 scripts/what_if_summary.py what-if.json > what-if.md
+          cat what-if.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Post what-if to the pull request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const body = require('fs').readFileSync('what-if.md', 'utf8');
+            const marker = '<!-- what-if -->';
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number: context.issue.number });
+            const previous = comments.find(c => c.body.startsWith(marker));
+            const params = { ...context.repo, body: `${marker}\n${body}` };
+            if (previous) await github.rest.issues.updateComment({ ...params, comment_id: previous.id });
+            else await github.rest.issues.createComment({ ...params, issue_number: context.issue.number });

@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /api
+    schedule:
+      interval: weekly
+    groups:
+      azure-sdk:
+        patterns: ["@azure/*"]
+      tooling:
+        patterns: ["eslint*", "@eslint/*", "typescript*", "@types/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
