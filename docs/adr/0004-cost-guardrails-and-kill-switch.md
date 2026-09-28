@@ -36,8 +36,10 @@ Contributor role cannot create role definitions.
   offline. Here the availability of a visit count is worth less than an unbounded bill. A service that must stay
   up would rate-limit per client in front of the API (Azure Front Door with a WAF rule, a paid option).
 - Someone has to restart a stopped app with `az functionapp start`. This is intended: a person should look at the
-  traffic first, and should wait until the alert has resolved. Flood metrics arrive in delayed batches, and an
-  app restarted right after a flood was stopped a second time by the same alert.
+  traffic first.
+- Action groups notify the Logic App when an alert fires and again when it resolves. The first version stopped the
+  app on every call, so the "Resolved" notification stopped an app that had just been restarted. The workflow now
+  checks `monitorCondition` in the common alert schema and only acts on alerts that are not resolved.
 - The alert threshold has to stay well below the throughput the scale caps allow. The first threshold of 3,000
   never fired during a flood test, because throttling kept every 5-minute window just under it. At 1,500 the
   alert fires.

@@ -20,7 +20,8 @@ meant to be run on purpose.
 ## No fallback to keys
 
 - 18:58: deleted the function's Cosmos DB data-plane role assignment. The next request returned HTTP 500
-  (`Counter unavailable`). There is no key to fall back to.
+  (`Counter unavailable`). There is no key to fall back to. (The handler answered 500 at that point; it now
+  returns 503 for the same failure.)
 - `az deployment group what-if` then listed exactly one `Create`: the missing role assignment (drift detected).
 - 19:01: redeploy, the API answered 200 again.
 
@@ -54,8 +55,22 @@ Each flood sent 3,600 GET requests with 25 in parallel from one client.
 | 2 | 18:53 to 18:58 | The alert fired at 18:58:49 (`ActionsTriggered`), but the Logic App never started: the action group had the workflow-level callback URL from `listCallbackUrl()` instead of the trigger URL. Fixed in the template. |
 | 3 | 19:10 to 19:14 | The Logic App run started at 19:14:45 and succeeded; from 19:15 the API returned 403 ("This web app is stopped"). |
 
-After run 3 the app was restarted at about 19:19 and was stopped again at 19:21:50 by the same alert, because
-delayed metric batches still counted. Restart only once the alert shows "Resolved".
+After run 3 the app was restarted at about 19:19 and was stopped again at 19:21:50. The alert history shows
+why: the alert resolved at 19:21:49, and the action group calls the Logic App for "Resolved" as well as for
+"Fired". The workflow stopped the app on every call. It now reads `data.essentials.monitorCondition` from the
+common alert schema and ignores "Resolved"; tested at 21:56 with a "Resolved" payload (API stayed at 200) and
+a "Fired" payload at 21:57 (API 403, then restarted).
+
+Evidence from Azure Monitor and the Logic App run history:
+
+| Time | Event |
+|---|---|
+| 18:35:22 | Logic App run `08584109863625466502457217761CU03`, triggered directly (first manual test) |
+| 18:58:49 to 19:05:44 | Burst alert fired and resolved; no run, because of the wrong callback URL |
+| 19:14:41 | Burst alert fired; Logic App run `08584109839995317940191688383CU18` at 19:14:45 stopped the app |
+| 19:21:49 | Alert resolved; run `08584109835745013097120992630CU10` at 19:21:50 stopped the restarted app (the bug above) |
+| 21:03:30 | Run `08584109774749838572945771768CU22`, direct test of the custom stop/start role |
+| 21:56:16, 21:57:01 | Runs `…415700CU16` ("Resolved", no stop) and `…210102678CU10` ("Fired", stop) after the fix |
 
 The kill switch later moved from the built-in Website Contributor role to a custom role that can only read,
 stop and start the app. Triggering it directly returned 202, the run succeeded, the API returned 403, and
@@ -72,7 +87,8 @@ The pipeline was built and exercised locally first. Its first runs on GitHub fou
 | 36481184047 | `Resource null of type Microsoft.Web/Sites`: ARM returned the output `AZURE_FUNCTION_APP_NAME` as `azurE_FUNCTION_APP_NAME` | camelCase outputs, and the workflow fails immediately if an output is missing |
 
 Run 36481719741 was the first fully green deployment: OIDC login, what-if, infrastructure, API, site and smoke
-test.
+test. The commit it shows (`b14633d`) no longer exists under that hash: the history was rewritten once on the
+same evening to correct the author name, which changed every hash. The content is unchanged.
 
 Later runs, after the production environment got a required reviewer:
 

@@ -63,7 +63,9 @@ database. The kill switch holds a custom role on the function app that allows re
 else.
 
 GitHub Actions signs in via OIDC, and Azure trusts one subject: the `production` environment, which only accepts
-deployments from `main` after CI has passed and after a required reviewer approves the run. On the resource group the pipeline is Contributor plus RBAC
+deployments from `main` after CI has passed and after a required reviewer approves the run. In a one-person
+repository the reviewer is the author, so the approval is a deliberate pause before production, not a
+four-eyes check; with a team the same rule becomes one. On the resource group the pipeline is Contributor plus RBAC
 administrator, and an ABAC condition limits the second role to the three Azure RBAC roles the templates assign,
 so it cannot make itself Owner. Pull requests get no Azure access at all, because Azure authorizes a `what-if`
 preview like a deployment. One gap is documented in [ADR 3](docs/adr/0003-oidc-and-constrained-rbac-for-ci.md):
@@ -127,9 +129,10 @@ You need the Azure CLI, Node 22 and an Azure subscription where you are Owner.
    `production` whose deployment branches are limited to `main` and which has a required reviewer. These values
    identify resources; they grant no access. `BUDGET_ALERT_EMAIL` is a repository secret only so the address is
    masked in public workflow logs.
-3. Push to `main`. After CI passes, `deploy.yml` writes a `what-if` summary, waits for the reviewer, provisions the
-   infrastructure, deploys the API and the site, and runs [`scripts/smoke-test.sh`](scripts/smoke-test.sh) against
-   the live system.
+3. Push to `main`. After CI passes, `deploy.yml` waits for the reviewer, then writes a `what-if` summary, provisions
+   the infrastructure, deploys the API and the site, and runs [`scripts/smoke-test.sh`](scripts/smoke-test.sh)
+   against the live system. The preview comes after the approval because `what-if` needs the deploy identity's
+   write permission, which only exists inside the protected environment.
 
 Pull requests and pushes run lint, typecheck, unit tests, `npm audit`, Bicep build and lint, and PSRule for Azure.
 
