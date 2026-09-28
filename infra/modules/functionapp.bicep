@@ -13,6 +13,9 @@ param cosmosDatabaseName string
 param cosmosContainerName string
 param allowedOrigins array
 
+@description('Subnet (delegated to Microsoft.App/environments) for VNet integration; empty for public networking.')
+param appSubnetId string = ''
+
 @description('Cost ceiling: the platform never runs more instances than this, whatever the traffic.')
 @minValue(1)
 param maximumInstanceCount int = 1
@@ -106,6 +109,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
     serverFarmId: plan.id
     httpsOnly: true
     clientAffinityEnabled: false // stateless API, no sticky sessions
+    virtualNetworkSubnetId: empty(appSubnetId) ? null : appSubnetId
     functionAppConfig: {
       deployment: {
         storage: {
