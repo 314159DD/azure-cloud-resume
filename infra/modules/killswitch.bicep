@@ -50,16 +50,29 @@ resource stopper 'Microsoft.Logic/workflows@2019-05-01' = {
         }
       }
       actions: {
-        stopFunctionApp: {
-          type: 'Http'
-          inputs: {
-            method: 'POST'
-            uri: '${environment().resourceManager}${substring(functionApp.id, 1)}/stop?api-version=2024-04-01'
-            authentication: {
-              type: 'ManagedServiceIdentity'
-              audience: environment().resourceManager
+        // Action groups also call the Logic App when an alert resolves. Without this check the
+        // "Resolved" notification stopped an app that had just been restarted (verification log).
+        unlessResolved: {
+          type: 'If'
+          expression: {
+            and: [
+              { not: { equals: ['@coalesce(triggerBody()?[\'data\']?[\'essentials\']?[\'monitorCondition\'], \'\')', 'Resolved'] } }
+            ]
+          }
+          actions: {
+            stopFunctionApp: {
+              type: 'Http'
+              inputs: {
+                method: 'POST'
+                uri: '${environment().resourceManager}${substring(functionApp.id, 1)}/stop?api-version=2024-04-01'
+                authentication: {
+                  type: 'ManagedServiceIdentity'
+                  audience: environment().resourceManager
+                }
+              }
             }
           }
+          else: { actions: {} }
         }
       }
     }

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # DISRUPTIVE: floods the API until the kill switch stops the function app. Run it on purpose only,
-# then restart the app once the alert shows "Resolved" (restarting earlier lets the delayed metric
-# batches stop it a second time):
+# then restart the app:
 #   az functionapp start -g <resource-group> -n <function-app>
 #
 # Sends GET requests (they do not change the counter) with limited parallelism, reports how the scale

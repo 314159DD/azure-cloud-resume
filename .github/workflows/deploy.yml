@@ -1,6 +1,7 @@
 # Continuous deployment. Runs only after CI succeeded on main (after a push, or a manual CI run), in the
 # "production" environment: restricted to the main branch, gated by a required reviewer, and the only
-# subject Azure trusts. The what-if preview is in the job summary before the reviewer approves.
+# subject Azure trusts. The what-if preview runs after the approval, as the first step, because it needs the
+# deploy identity's write permission (see ADR 3); its summary is on the run page.
 name: Deploy
 
 on:
