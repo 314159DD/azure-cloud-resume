@@ -1,0 +1,80 @@
+# Continuous deployment from main: infrastructure, API, site, then verification against the live system.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.infra.outputs.site_url }}
+    permissions:
+      contents: read
+      id-token: write # OIDC token for azure/login, no secret involved
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }} # a secret only so it is masked in public logs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy infrastructure (Bicep)
+        id: infra
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "deploy-${GITHUB_RUN_NUMBER}" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.bicepparam \
+            --query properties.outputs --output json)
+          echo "function_app=$(jq -r .AZURE_FUNCTION_APP_NAME.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "static_web_app=$(jq -r .AZURE_STATIC_WEB_APP_NAME.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(jq -r .API_BASE_URL.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "site_url=$(jq -r .SITE_URL.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+
+      - name: Build API
+        working-directory: api
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      - name: Deploy API (Flex Consumption)
+        uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
+        with:
+          app-name: ${{ steps.infra.outputs.function_app }}
+          package: api
+          sku: flexconsumption
+
+      - name: Deploy site
+        run: |
+          echo "window.CLOUDRESUME_API = \"${{ steps.infra.outputs.api_base_url }}\";" > web/config.js
+          # Short-lived use of the deployment token: fetched at run time, never stored as a secret.
+          token=$(az staticwebapp secrets list --name "${{ steps.infra.outputs.static_web_app }}" \
+            --resource-group "$RESOURCE_GROUP" --query properties.apiKey --output tsv)
+          echo "::add-mask::$token"
+          npx --yes @azure/static-web-apps-cli@2.0.8 deploy ./web --deployment-token "$token" --env production
+
+      - name: Verify the live system
+        run: ./scripts/smoke-test.sh "${{ steps.infra.outputs.api_base_url }}" "${{ steps.infra.outputs.site_url }}"
