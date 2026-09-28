@@ -1,0 +1,7 @@
+node_modules/
+dist/
+api/local.settings.json
+web/config.js
+.azure/
+*.zip
+.env
