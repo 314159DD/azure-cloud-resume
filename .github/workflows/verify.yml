@@ -1,5 +1,6 @@
-# Proves the guardrails from the pipeline's own identity: every check tries a change that must be refused
-# (enable keys, grant itself Owner), so a passing run changes nothing. Manual, in the protected environment.
+# Proves the guardrails from each environment's own deploy identity: every check tries a change that must be
+# refused (enable keys, grant itself Owner), so a passing run changes nothing. Manual, in the protected
+# environments.
 name: Verify guardrails
 
 on:
@@ -10,9 +11,13 @@ permissions:
 
 jobs:
   verify:
-    name: Verify guardrails as the deploy identity
+    name: Verify guardrails (${{ matrix.environment }})
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
     runs-on: ubuntu-24.04
-    environment: production
+    environment: ${{ matrix.environment }}
     permissions:
       contents: read
       id-token: write # OIDC token for azure/login, no secret involved

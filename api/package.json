@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "tsc && node --test \"dist/test/**/*.test.js\"",
-    "start": "npm run build && func start"
+    "start": "npm run build && func start",
+    "test:integration": "tsc && node --test \"dist/integration/**/*.test.js\""
   },
   "dependencies": {
     "@azure/cosmos": "^4.10.1",

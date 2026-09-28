@@ -11,11 +11,12 @@ include:
 input:
   pathIgnore:
     - "**"
-    - "!infra/main.bicepparam"
+    - "!infra/environments/*.bicepparam"
 
 configuration:
   AZURE_BICEP_FILE_EXPANSION: false
   AZURE_BICEP_PARAMS_FILE_EXPANSION: true
+  AZURE_BICEP_FILE_EXPANSION_TIMEOUT: 120
   AZURE_RESOURCE_ALLOWED_LOCATIONS: [germanywestcentral, eastus2, global]
 
 rule:
@@ -36,6 +37,10 @@ rule:
     # The kill-switch trigger is called by Azure Monitor action groups, whose source addresses are not
     # a fixed range. The trigger URL carries a SAS signature and the workflow can only stop one app.
     - Azure.LogicApp.LimitHTTPTrigger
+    # Private-network variant only: the app subnet keeps default outbound access because the function needs
+    # Entra ID, host storage and Application Insights; removing it requires a NAT gateway (billed per hour).
+    # The private-endpoint subnet has default outbound access disabled.
+    - Azure.VNET.PrivateSubnet
 
 output:
   culture: [en-US]
