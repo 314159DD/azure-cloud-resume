@@ -148,6 +148,18 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   dependsOn: [storageRole, monitoringRole, cosmosDataRole]
 }
 
+// Deployments go through Entra (OIDC in CI); username/password publishing is switched off for FTP and SCM.
+resource ftpCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: functionApp
+  name: 'ftp'
+  properties: { allow: false }
+}
+
+resource scmCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: functionApp
+  name: 'scm'
+  properties: { allow: false }
+}
+
 output functionAppName string = functionApp.name
-output functionAppId string = functionApp.id
 output apiBaseUrl string = 'https://${functionApp.properties.defaultHostName}/api'

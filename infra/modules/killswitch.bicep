@@ -1,9 +1,8 @@
-// Cost guardrails that act, not just warn.
+// Automatic stop for runaway cost.
 //
 // Budgets and alerts only notify. For a usage-billed API the only hard stop is automation:
-//   execution-count alert  --\
-//                             >-- action group --> Logic App (managed identity) --> POST .../stop
-//   budget exceeded ---------/
+//   execution alerts (burst, sustained) and the exhausted budget
+//     -> action group -> Logic App (managed identity) -> POST .../stop on the Function App
 // The Logic App may only stop/start this one Function App ("Website Contributor" scoped to it).
 // Re-enable after investigating: az functionapp start -g <rg> -n <app>
 param location string
@@ -12,10 +11,19 @@ param tags object
 param functionAppName string
 param alertEmail string
 
-@description('''Executions per 5 minutes that count as abuse (1500 = 5 requests/s sustained).
+@description('''Executions per 5 minutes that count as a flood (1500 = 5 requests/s).
 Must sit well below what the scale caps allow (about 12 requests/s measured with 1 instance and
 10 concurrent requests), otherwise throttling keeps the metric under the threshold and it never fires.''')
-param executionThreshold int = 1500
+param burstThreshold int = 1500
+
+@description('''Executions per 24 hours that count as abuse (20000 = 0.23 requests/s on average).
+Catches steady traffic that stays just under the burst threshold, well before the lagging budget would.''')
+param sustainedThreshold int = 20000
+
+var executionAlerts = [
+  { name: 'burst', description: 'Flood of requests', frequency: 'PT1M', window: 'PT5M', threshold: burstThreshold }
+  { name: 'sustained', description: 'Sustained abuse below the burst threshold', frequency: 'PT1H', window: 'P1D', threshold: sustainedThreshold }
+]
 
 var roleWebsiteContributor = 'de139f84-1756-47ae-9be6-808fbbe84772'
 
@@ -90,34 +98,36 @@ resource killSwitchGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   }
 }
 
-resource floodAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
-  name: 'alert-${namePrefix}-execution-flood'
-  location: 'global'
-  tags: tags
-  properties: {
-    description: 'Stops the Function App when executions exceed the abuse threshold.'
-    severity: 1
-    enabled: true
-    scopes: [functionApp.id]
-    autoMitigate: true
-    evaluationFrequency: 'PT1M'
-    windowSize: 'PT5M'
-    criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
-      allOf: [
-        {
-          criterionType: 'StaticThresholdCriterion'
-          name: 'executions'
-          metricNamespace: 'Microsoft.Web/sites'
-          metricName: 'OnDemandFunctionExecutionCount'
-          operator: 'GreaterThan'
-          threshold: executionThreshold
-          timeAggregation: 'Total'
-        }
-      ]
+resource executionAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = [
+  for alert in executionAlerts: {
+    name: 'alert-${namePrefix}-executions-${alert.name}'
+    location: 'global'
+    tags: tags
+    properties: {
+      description: '${alert.description}: stops the Function App.'
+      severity: 1
+      enabled: true
+      scopes: [functionApp.id]
+      autoMitigate: true
+      evaluationFrequency: alert.frequency
+      windowSize: alert.window
+      criteria: {
+        'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+        allOf: [
+          {
+            criterionType: 'StaticThresholdCriterion'
+            name: 'executions'
+            metricNamespace: 'Microsoft.Web/sites'
+            metricName: 'OnDemandFunctionExecutionCount'
+            operator: 'GreaterThan'
+            threshold: alert.threshold
+            timeAggregation: 'Total'
+          }
+        ]
+      }
+      actions: [{ actionGroupId: killSwitchGroup.id }]
     }
-    actions: [{ actionGroupId: killSwitchGroup.id }]
   }
-}
+]
 
 output actionGroupId string = killSwitchGroup.id

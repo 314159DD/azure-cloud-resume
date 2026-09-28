@@ -1,5 +1,5 @@
-// Static site on the Free plan. Content is deployed from CI with a short-lived deployment token,
-// not through a portal-linked repository. The Free plan cannot incur charges.
+// Static site on the Free plan, which cannot incur charges. CI deploys the content with the site's
+// deployment token, which it reads at run time through its OIDC login; the token is never stored in GitHub.
 param location string
 param namePrefix string
 param tags object

@@ -88,7 +88,6 @@ module budget 'modules/budget.bicep' = {
   }
 }
 
-output AZURE_LOCATION string = location
 output AZURE_FUNCTION_APP_NAME string = api.outputs.functionAppName
 output AZURE_STATIC_WEB_APP_NAME string = site.outputs.name
 output API_BASE_URL string = api.outputs.apiBaseUrl
