@@ -3,7 +3,7 @@
 // Budgets and alerts only notify. For a usage-billed API the only hard stop is automation:
 //   execution alerts (burst, sustained) and the exhausted budget
 //     -> action group -> Logic App (managed identity) -> POST .../stop on the Function App
-// The Logic App may only stop/start this one Function App ("Website Contributor" scoped to it).
+// The Logic App may only stop/start this one Function App (custom role limited to read, stop and start, scoped to the app).
 // Re-enable after investigating: az functionapp start -g <rg> -n <app>
 param location string
 param namePrefix string
@@ -25,7 +25,8 @@ var executionAlerts = [
   { name: 'sustained', description: 'Sustained abuse below the burst threshold', frequency: 'PT1H', window: 'P1D', threshold: sustainedThreshold }
 ]
 
-var roleWebsiteContributor = 'de139f84-1756-47ae-9be6-808fbbe84772'
+// "Cloud Resume Function Stopper": custom role created by scripts/bootstrap.ps1 (sites/read, stop, start).
+var roleFunctionStopper = 'a9567326-3f0c-4ec2-a9c0-8af4236ffe24'
 
 resource functionApp 'Microsoft.Web/sites@2024-04-01' existing = {
   name: functionAppName
@@ -67,9 +68,9 @@ resource stopper 'Microsoft.Logic/workflows@2019-05-01' = {
 
 resource stopperRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: functionApp
-  name: guid(functionApp.id, stopper.id, roleWebsiteContributor)
+  name: guid(functionApp.id, stopper.id, roleFunctionStopper)
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleWebsiteContributor)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleFunctionStopper)
     principalId: stopper.identity.principalId
     principalType: 'ServicePrincipal'
   }
