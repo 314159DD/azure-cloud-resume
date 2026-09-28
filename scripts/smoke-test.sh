@@ -32,7 +32,9 @@ out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 pids=()
 for i in $(seq "$PARALLEL"); do
-  curl -fsS -X POST "$COUNTER" -o "$out/$i.json" &
+  # Retries absorb platform 503s while the instance restarts after a code deployment. A retried POST can
+  # only add increments, never return a count twice, so the distinct-count check stays valid.
+  curl -fsS --retry 3 --retry-all-errors --retry-delay 2 -X POST "$COUNTER" -o "$out/$i.json" &
   pids+=("$!")
 done
 for pid in "${pids[@]}"; do
