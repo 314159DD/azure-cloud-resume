@@ -73,3 +73,11 @@ The pipeline was built and exercised locally first. Its first runs on GitHub fou
 
 Run 36481719741 was the first fully green deployment: OIDC login, what-if, infrastructure, API, site and smoke
 test.
+
+Later runs, after the production environment got a required reviewer:
+
+| Run | Result |
+|---|---|
+| [36484234169](https://github.com/314159DD/azure-cloud-resume/actions/runs/36484234169) | Deployed, but the smoke test failed: two of the 20 concurrent POSTs got HTTP 503 while the function restarted after the code deployment. App Insights showed no 503 from the handler, so the platform answered before the worker did. The smoke test now retries transient failures per request. |
+| [36485803598](https://github.com/314159DD/azure-cloud-resume/actions/runs/36485803598) | Green, smoke test `98 -> 118` with 20 distinct counts. |
+| [36485870155](https://github.com/314159DD/azure-cloud-resume/actions/runs/36485870155) (Verify guardrails) | Green as the deploy identity: enabling keys on Storage and Cosmos DB refused with `RequestDisallowedByPolicy`, granting itself Owner refused with `AuthorizationFailed`, keys and basic publishing credentials off. |

@@ -7,6 +7,8 @@ on:
   pull_request:
   push:
     branches: [main]
+    # Documentation-only changes do not need a test run or a deployment.
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
   workflow_dispatch: # a manual CI run on main also triggers a deployment
 
 permissions:
