@@ -9,6 +9,8 @@ meant to be run on purpose.
 | Site headers, atomic counter, CORS | [`scripts/smoke-test.sh`](../scripts/smoke-test.sh) (runs after every deployment) | no |
 | Keys stay off, no Owner escalation, no basic publishing credentials | [`scripts/verify-guardrails.sh`](../scripts/verify-guardrails.sh), or the **Verify guardrails** workflow | no |
 | Throttling and kill switch | [`scripts/flood-test.sh`](../scripts/flood-test.sh) | yes, stops the API |
+| Cosmos DB adapter (patch `incr`, 404, create race) | `npm run test:integration` against the emulator (CI job "API integration") | no |
+| Private networking variant | deploy `infra/environments/private-network-test.bicepparam` to a throwaway resource group | no (separate resource group) |
 
 ## Atomic counter
 
@@ -75,6 +77,29 @@ Evidence from Azure Monitor and the Logic App run history:
 The kill switch later moved from the built-in Website Contributor role to a custom role that can only read,
 stop and start the app. Triggering it directly returned 202, the run succeeded, the API returned 403, and
 `az functionapp start` brought it back to 200.
+
+## Cosmos DB adapter against the emulator
+
+The integration tests (`api/integration`) run in CI against the Linux Cosmos DB emulator as a service container.
+First run on the pull request that added them: `ok 1 - first visit creates the counter, later visits increment
+it`, `ok 2 - concurrent increments are atomic, including the create race on a new counter` (25 concurrent
+increments on a new counter return 1 to 25 exactly once each), `# skipped 0`.
+
+## Private networking variant
+
+Deployed twice with `infra/environments/private-network-test.bicepparam` into throwaway resource groups
+(2026-09-28, UTC), each deleted afterwards:
+
+| Step | First run (`rg-cloudresume-nettest`) | Re-test with the final network module (`rg-cloudresume-nettest2`) |
+|---|---|---|
+| Deployment | 22:31 to 22:43; the private endpoint alone took 10 min 22 s | 23:05 to 23:17 |
+| Configuration | Cosmos DB `publicNetworkAccess: Disabled`, serverless; private endpoint `Approved`; function integrated into `vnet-…/subnets/app` | same, plus an NSG on both subnets with `deny-outbound-ssh-rdp` (22, 3389) and `defaultOutboundAccess: false` on the endpoint subnet; workbook present |
+| Counter through the private endpoint | `POST /api/visits` → 200 `{"count":2}` | 200 `{"count":1}` |
+| Cosmos DB from the internet (developer PC, Entra token) | HTTP 403: "Request originated from IP … through public internet. This is blocked by your Cosmos DB account firewall settings." | same 403 |
+| Resource group deleted | 22:50 to 23:07 | after the re-test |
+
+The first run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
+`Azure.NSG.LateralTraversal`), which is why the variant was deployed and tested a second time.
 
 ## First pipeline runs
 
