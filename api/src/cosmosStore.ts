@@ -1,8 +1,8 @@
 // CounterStore adapter for Cosmos DB (NoSQL API).
-// Authenticates with the function's managed identity via DefaultAzureCredential: the account has
+// Authenticates with the function's managed identity: the account has
 // local (key) auth disabled, so there is no key or connection string anywhere, only the endpoint.
 import { Container, CosmosClient, ErrorResponse } from "@azure/cosmos";
-import { DefaultAzureCredential } from "@azure/identity";
+import { DefaultAzureCredential, ManagedIdentityCredential, type TokenCredential } from "@azure/identity";
 import type { CounterStore } from "./counter";
 
 interface CounterDoc {
@@ -18,7 +18,12 @@ export class CosmosCounterStore implements CounterStore {
   static fromEnv(env: NodeJS.ProcessEnv = process.env): CosmosCounterStore {
     const endpoint = env.COSMOS_ENDPOINT;
     if (!endpoint) throw new Error("COSMOS_ENDPOINT is not set");
-    const client = new CosmosClient({ endpoint, aadCredentials: new DefaultAzureCredential() });
+    // In Azure the app settings name the user-assigned identity; locally, DefaultAzureCredential falls
+    // back to the developer's Azure CLI login.
+    const credential: TokenCredential = env.AZURE_CLIENT_ID
+      ? new ManagedIdentityCredential({ clientId: env.AZURE_CLIENT_ID })
+      : new DefaultAzureCredential();
+    const client = new CosmosClient({ endpoint, aadCredentials: credential });
     const container = client.database(env.COSMOS_DATABASE ?? "cloudresume").container(env.COSMOS_CONTAINER ?? "counters");
     return new CosmosCounterStore(container);
   }

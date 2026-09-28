@@ -25,6 +25,19 @@ test("POST increments, GET only reads", async () => {
   assert.deepEqual(await handleVisits("GET", store), { status: 200, body: { count: 2 } });
 });
 
+test("the smoke-test counter is separate from the public one", async () => {
+  const store = new FakeStore();
+  await handleVisits("POST", store, "smoke");
+  assert.deepEqual(await handleVisits("GET", store), { status: 200, body: { count: 0 } });
+  assert.deepEqual(await handleVisits("GET", store, "smoke"), { status: 200, body: { count: 1 } });
+});
+
+test("unknown counters are rejected without touching the store", async () => {
+  const store = new FakeStore();
+  assert.deepEqual(await handleVisits("POST", store, "anything"), { status: 400, body: { error: "Unknown counter" } });
+  assert.equal(store.counts.size, 0);
+});
+
 test("other methods are rejected without touching the store", async () => {
   const store = new FakeStore();
   assert.equal((await handleVisits("DELETE", store)).status, 405);

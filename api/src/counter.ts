@@ -15,14 +15,30 @@ export interface VisitsResult {
   body: VisitsBody;
 }
 
-export const COUNTER_ID = "resume";
+/** The public counter shown on the site. */
+export const DEFAULT_COUNTER = "resume";
 
-export async function handleVisits(method: string, store: CounterStore): Promise<VisitsResult> {
+/**
+ * Counters a caller may address. "smoke" is used by the post-deploy smoke test so that verifying
+ * the live system does not change the public number. Anything else is rejected, which keeps callers
+ * from creating arbitrary documents.
+ */
+export const COUNTERS: readonly string[] = [DEFAULT_COUNTER, "smoke"];
+
+export async function handleVisits(
+  method: string,
+  store: CounterStore,
+  counterId: string | null = null,
+): Promise<VisitsResult> {
+  const id = counterId ?? DEFAULT_COUNTER;
+  if (!COUNTERS.includes(id)) {
+    return { status: 400, body: { error: "Unknown counter" } };
+  }
   switch (method.toUpperCase()) {
     case "POST":
-      return { status: 200, body: { count: await store.increment(COUNTER_ID) } };
+      return { status: 200, body: { count: await store.increment(id) } };
     case "GET":
-      return { status: 200, body: { count: await store.get(COUNTER_ID) } };
+      return { status: 200, body: { count: await store.get(id) } };
     default:
       return { status: 405, body: { error: "Method not allowed" } };
   }

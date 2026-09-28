@@ -5,11 +5,12 @@ import { CosmosCounterStore } from "../cosmosStore";
 // Created once per instance, not per invocation: the client keeps connections and a token cache.
 let store: CounterStore | undefined;
 
+const headers = { "Cache-Control": "no-store" };
+
 export async function visits(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  store ??= CosmosCounterStore.fromEnv();
-  const headers = { "Cache-Control": "no-store" };
   try {
-    const result = await handleVisits(request.method, store);
+    store ??= CosmosCounterStore.fromEnv();
+    const result = await handleVisits(request.method, store, request.query.get("id"));
     return { status: result.status, jsonBody: result.body, headers };
   } catch (e) {
     context.error("Counter operation failed", e);
