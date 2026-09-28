@@ -29,24 +29,32 @@ export class CosmosCounterStore implements CounterStore {
   }
 
   async increment(id: string): Promise<number> {
+    const count = await this.patchIncrement(id);
+    if (count !== null) return count;
+    // First visit ever: create the document. If a concurrent request created it first (409), the
+    // document now exists and one more atomic increment is enough.
     try {
-      // Server-side atomic increment. A read-modify-write would lose visits under concurrency.
+      await this.container.items.create<CounterDoc>({ id, count: 1 });
+      return 1;
+    } catch (e) {
+      if (!hasStatus(e, 409)) throw e;
+    }
+    const retried = await this.patchIncrement(id);
+    if (retried === null) throw new Error(`Counter ${id} disappeared during creation`);
+    return retried;
+  }
+
+  /** Server-side atomic increment; a read-modify-write would lose visits under concurrency. Null if missing. */
+  private async patchIncrement(id: string): Promise<number | null> {
+    try {
       const { resource } = await this.container
         .item(id, id)
         .patch<CounterDoc>([{ op: "incr", path: "/count", value: 1 }]);
       if (!resource) throw new Error("Patch returned no document");
       return resource.count;
     } catch (e) {
-      if (!hasStatus(e, 404)) throw e;
-    }
-    // First visit ever: create the document. If a concurrent request created it first (409),
-    // fall back to the atomic increment.
-    try {
-      await this.container.items.create<CounterDoc>({ id, count: 1 });
-      return 1;
-    } catch (e) {
-      if (!hasStatus(e, 409)) throw e;
-      return this.increment(id);
+      if (hasStatus(e, 404)) return null;
+      throw e;
     }
   }
 
