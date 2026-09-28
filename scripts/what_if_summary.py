@@ -1,8 +1,7 @@
 """Turns `az deployment group what-if --output json` into a short Markdown summary for pull requests.
 
-Separates changes to resources (create/delete) from property-level modifications so reviewers see the
-real impact first. Property changes the platform fills in on its own ("noise") are still listed, but
-collapsed, because a reviewer should look at them deliberately instead of trusting a green check.
+Lists created and deleted resources first. Property-level modifications follow in a collapsed block: many of
+them are values the platform fills in on its own ("noise"), but a reviewer still has to decide that for each one.
 """
 import json
 import sys
@@ -28,7 +27,7 @@ def main(path: str) -> None:
 
     structural = [c for c in changes if c["changeType"] in ("Create", "Delete", "Unsupported")]
     if structural:
-        print("#### Resources created or deleted\n")
+        print("#### Resources created, deleted or not evaluated\n")
         for c in structural:
             print(f"- `{ICONS.get(c['changeType'], '?')}` {c['changeType']} `{short_id(c['resourceId'])}`")
         print()
