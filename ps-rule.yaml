@@ -1,0 +1,44 @@
+# PSRule for Azure: validates the Bicep deployment against the Azure Well-Architected Framework rules.
+# Every excluded rule is a deliberate trade-off for a single-region, free-tier workload, with the reason
+# next to it (see also README "Deliberate trade-offs"). Revisit them before this pattern carries real data.
+requires:
+  PSRule.Rules.Azure: ">=1.47.0"
+
+include:
+  module:
+    - PSRule.Rules.Azure
+
+input:
+  pathIgnore:
+    - "**"
+    - "!infra/main.bicepparam"
+
+configuration:
+  AZURE_BICEP_FILE_EXPANSION: false
+  AZURE_BICEP_PARAMS_FILE_EXPANSION: true
+  AZURE_RESOURCE_ALLOWED_LOCATIONS: [germanywestcentral, eastus2, global]
+
+rule:
+  exclude:
+    # Availability: one region, one instance by design (cost ceiling, ADR 1 and 4). A visitor counter
+    # tolerates a regional outage; zone/geo redundancy would multiply cost and break the free tier.
+    - Azure.AppService.PlanInstanceCount
+    - Azure.AppService.AvailabilityZone
+    - Azure.Cosmos.AvailabilityZone
+    - Azure.Storage.UseReplication # storage holds only the rebuildable deployment package
+    - Azure.Log.Replication
+    # Free tier: no SLA is accepted for this workload.
+    - Azure.Cosmos.SLA
+    # Network isolation: private endpoints and VNet integration are billed per hour and would exceed the
+    # budget. Compensating controls: key-based auth is disabled everywhere, access is RBAC-only (ADR 2).
+    - Azure.Cosmos.PublicAccess
+    - Azure.Storage.Firewall
+    # The kill-switch trigger is called by Azure Monitor action groups, whose source addresses are not
+    # a fixed range. The trigger URL carries a SAS signature and the workflow can only stop one app.
+    - Azure.LogicApp.LimitHTTPTrigger
+
+output:
+  culture: [en-US]
+
+execution:
+  unprocessedObject: Ignore
