@@ -5,3 +5,4 @@ web/config.js
 .azure/
 *.zip
 .env
+__pycache__/

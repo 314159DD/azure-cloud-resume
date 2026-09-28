@@ -1,0 +1,8 @@
+{
+  "name": "cloudresume-tools",
+  "private": true,
+  "description": "Deployment tooling, pinned by the lockfile so CI does not fetch unpinned packages.",
+  "devDependencies": {
+    "@azure/static-web-apps-cli": "2.0.8"
+  }
+}
