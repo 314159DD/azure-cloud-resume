@@ -103,7 +103,14 @@ configuration check (`publicNetworkAccess: Disabled`, private endpoint `Approved
 counter through the private endpoint and the public-internet 403 all passed. The tear-down step failed and deleted
 nothing: Application Insights creates an alert rule named "Failure Anomalies - …", and the unquoted list of
 resource IDs was split on its spaces. The resources were deleted by hand right after, the step now reads the IDs
-into an array, and the workflow was run again (see below).
+into an array, and the workflow was run again.
+
+The second run, [36506420940](https://github.com/314159DD/azure-cloud-resume/actions/runs/36506420940), failed in
+the deployment: the empty resource group meant a new managed identity, and Cosmos DB rejected its role
+assignment with "The provided principal ID … was not found in the AAD tenant". The identity existed but had not
+replicated through Entra ID yet. Together with the Cosmos DB lock on the first production attempt, that made two
+transient platform errors, so deployments now go through `scripts/deploy-infra.sh`, which retries exactly these
+two messages and fails on anything else.
 
 The first manual run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
 `Azure.NSG.LateralTraversal`), which is why the variant was deployed and tested a second time.
