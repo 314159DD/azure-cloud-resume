@@ -102,6 +102,16 @@ module killSwitch 'modules/killswitch.bicep' = {
   }
 }
 
+module opsAlerts 'modules/ops-alerts.bicep' = {
+  name: 'ops-alerts'
+  params: {
+    namePrefix: namePrefix
+    tags: tags
+    appInsightsName: monitoring.outputs.appInsightsName
+    alertEmail: alertEmail
+  }
+}
+
 module workbook 'modules/workbook.bicep' = {
   name: 'workbook'
   params: {

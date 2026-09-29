@@ -60,3 +60,45 @@ The kill switch ignores the "Resolved" notification itself, so waiting for it do
 
 - Note the incident (time, cause, cost) in `docs/verification.md` if it taught something new.
 - If thresholds changed, deploy them through a pull request so staging runs first.
+
+# Runbook: the API is failing but was not stopped
+
+You received an e-mail from the `ag-…-ops` action group (alert `alert-…-failed-requests`: more than 5 failed
+requests in 15 minutes), or the hourly **Health check** workflow failed. The kill switch did not fire, so this is
+a broken API and not a flood. The alert only notifies; it never stops the app.
+
+## 1. Confirm
+
+- Open the failed **Health check** run. Its log shows which request failed (site, `/config.js`, or the counter GET).
+- Ask the API directly. A healthy answer is 200 with `{"count":<number>}`:
+
+```bash
+curl -i "https://<function app>.azurewebsites.net/api/visits"
+```
+
+- Check the app state and the recent failures:
+
+```bash
+RG=rg-cloudresume
+FUNC=$(az functionapp list -g $RG --query "[0].name" -o tsv)
+az functionapp show -g $RG -n $FUNC --query state -o tsv   # Running, or Stopped after the kill switch
+az monitor app-insights query -g $RG --app appi-<suffix> --offset 2h --analytics-query   "requests | where success == false | summarize n = count() by resultCode, bin(timestamp, 15m)"
+az monitor app-insights query -g $RG --app appi-<suffix> --offset 2h --analytics-query   "exceptions | project timestamp, type, outerMessage | order by timestamp desc | take 20"
+```
+
+## 2. Common causes
+
+| Symptom | Cause | Action |
+|---|---|---|
+| 503 `Counter unavailable` | The function's Cosmos DB data-plane role assignment is missing or the account is unreachable. There is no key to fall back to ([verification](verification.md), "No fallback to keys"). | Redeploy the infrastructure (step 3). |
+| 403 "This web app is stopped" | The kill switch stopped the app. | Follow the kill-switch runbook above. |
+| 429 from Cosmos DB in `exceptions` | The 1,000 RU/s cap throttles requests. | Look for a burst in `requests`; it usually passes on its own. |
+| Failures start right after a deployment | A bad release. | Revert the commit in a pull request; the merge deploys the previous state through staging first. |
+
+## 3. Recover
+
+Deploying the infrastructure again restores a drifted role assignment: merge a change to `main`, or run the
+**CI** workflow manually on `main`, which starts the **Deploy** workflow. Verify with
+`./scripts/smoke-test.sh "https://$FUNC.azurewebsites.net/api" "<site url from the README>"`. The alert resolves
+itself once failures stop, and the next hourly **Health check** run turns green.
+

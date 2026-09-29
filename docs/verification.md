@@ -7,6 +7,7 @@ meant to be run on purpose.
 | Check | Repeat it with | Disruptive |
 |---|---|---|
 | Site headers, atomic counter, CORS | [`scripts/smoke-test.sh`](../scripts/smoke-test.sh) (runs after every deployment) | no |
+| Site and public counter are up (GET, no increment) | the hourly **Health check** workflow (`.github/workflows/health.yml`, no Azure login) | no |
 | Keys stay off, no Owner escalation, no basic publishing credentials | [`scripts/verify-guardrails.sh`](../scripts/verify-guardrails.sh), or the **Verify guardrails** workflow | no |
 | Throttling and kill switch | [`scripts/flood-test.sh`](../scripts/flood-test.sh) | yes, stops the API |
 | Cosmos DB adapter (patch `incr`, 404, create race) | `npm run test:integration` against the emulator (CI job "API integration") | no |
