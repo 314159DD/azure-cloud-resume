@@ -141,6 +141,17 @@ DB: it needs a new Entra token for Cosmos DB 14 minutes after `azure/login`, whe
 the GitHub OIDC token has expired. Changes: both Azure workflows set `shell: bash` (which adds `pipefail`), and the
 network test signs in again right before the probe.
 
+The fifth run, [36574307186](https://github.com/314159DD/azure-cloud-resume/actions/runs/36574307186)
+(2026-09-29, 13:20 to 13:56 UTC), is the first one where every check is shown by the workflow itself:
+
+| Step | Result |
+|---|---|
+| Deployment | 13:20 to 13:33 (766 s), first attempt |
+| Network configuration | `publicNetworkAccess: Disabled`, private endpoint `Approved`, function in `vnet-…/subnets/app` |
+| Counter through the private endpoint | `POST /api/visits?id=smoke` → `{"count":1}` |
+| Cosmos DB from the internet (GitHub runner, fresh login) | `PASS: refused from the public internet (HTTP 403): Request originated from IP … through public internet. This is blocked by your Cosmos DB account firewall settings.` |
+| Tear-down | 21 resources, then 4, 2 and none; "Resource group empty after 3 deletion pass(es), 20 min 53 s" |
+
 The first manual run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
 `Azure.NSG.LateralTraversal`), which is why the variant was deployed and tested a second time.
 
