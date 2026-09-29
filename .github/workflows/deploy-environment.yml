@@ -26,6 +26,10 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
       url: ${{ steps.infra.outputs.site_url }}
+    defaults:
+      run:
+        # Explicit bash adds -o pipefail, so a failing script is not hidden behind a pipe.
+        shell: bash
     permissions:
       contents: read
       id-token: write # OIDC token for azure/login, no secret involved
@@ -80,6 +84,10 @@ jobs:
           npm run build
           npm prune --omit=dev
 
+      # The action logs "Neither AzureWebJobsStorage nor AzureWebJobsStorage__accountName exist" on every run. It is
+      # expected here: the host storage uses AzureWebJobsStorage__credential, __clientId and __blobServiceUri
+      # (infra/modules/functionapp.bicep), and the action only checks for the two names in the warning. The package
+      # itself goes to the deployment container configured in functionAppConfig.deployment.storage.
       - name: Deploy API (Flex Consumption)
         uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
         with:

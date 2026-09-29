@@ -6,7 +6,7 @@
   Creates everything the pipeline must not be able to create or change itself:
 
   - the resource group,
-  - a deploy identity, trusted only for the GitHub "production" environment, with Contributor plus a
+  - a deploy identity, trusted only for the GitHub environment being set up, with Contributor plus a
     Role Based Access Control Administrator assignment that an ABAC condition limits to the roles the
     templates assign (without it the pipeline could make itself Owner),
   - Azure Policy assignments that deny re-enabling key-based access on Storage, Cosmos DB and
