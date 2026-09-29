@@ -1,10 +1,13 @@
 # Proves the guardrails from each environment's own deploy identity: every check tries a change that must be
-# refused (enable keys, grant itself Owner), so a passing run changes nothing. Manual, in the protected
-# environments.
+# refused (enable keys, grant itself Owner), so a passing run changes nothing. Runs in the protected
+# environments. The weekly schedule covers staging only, because production needs a human reviewer and a
+# scheduled run would wait for one. A manual run covers both.
 name: Verify guardrails
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '41 6 * * 1'
 
 permissions:
   contents: read
@@ -15,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [staging, production]
+        environment: ${{ fromJSON(github.event_name == 'schedule' && '["staging"]' || '["staging","production"]') }}
     runs-on: ubuntu-24.04
     environment: ${{ matrix.environment }}
     defaults:
