@@ -1,0 +1,105 @@
+# Reproducible test of the private-networking variant (ADR 7). Deploys infra/environments/private-network-test
+# into its own resource group, proves that the function reaches Cosmos DB through the private endpoint while
+# the public internet is refused, and removes every resource again, also when a step fails. Manual only: a
+# run takes about 40 minutes (private endpoints are slow to create and delete) and costs cents.
+name: Private network test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: network-test
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Deploy, verify, tear down
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: network-test
+    permissions:
+      contents: read
+      id-token: write # OIDC token for azure/login, no secret involved
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the private-network variant
+        id: infra
+        run: |
+          start=$(date +%s)
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "network-test-${GITHUB_RUN_NUMBER}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/private-network-test.bicepparam \
+            --query properties.outputs --output json)
+          echo "function_app=$(jq -r .functionAppName.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(jq -r .apiBaseUrl.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "Deployment took $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Build and deploy the API
+        run: |
+          (cd api && npm ci && npm run build)
+          cp -r api api-package && (cd api-package && npm prune --omit=dev)
+      - uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7
+        with:
+          app-name: ${{ steps.infra.outputs.function_app }}
+          package: api-package
+          sku: flexconsumption
+          respect-funcignore: true
+
+      - name: Verify the network configuration
+        run: |
+          cosmos=$(az cosmosdb list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          public=$(az cosmosdb show -g "$RESOURCE_GROUP" -n "$cosmos" --query publicNetworkAccess -o tsv)
+          endpoint_state=$(az network private-endpoint list -g "$RESOURCE_GROUP" \
+            --query "[0].privateLinkServiceConnections[0].privateLinkServiceConnectionState.status" -o tsv)
+          subnet=$(az resource show -g "$RESOURCE_GROUP" -n "${{ steps.infra.outputs.function_app }}" \
+            --resource-type Microsoft.Web/sites --query properties.virtualNetworkSubnetId -o tsv)
+          {
+            echo "Cosmos DB publicNetworkAccess: $public"
+            echo "Private endpoint connection: $endpoint_state"
+            echo "Function VNet integration: ${subnet##*/virtualNetworks/}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [[ "$public" == "Disabled" && "$endpoint_state" == "Approved" && "$subnet" == */subnets/app ]]
+          echo "COSMOS_ENDPOINT=$(az cosmosdb show -g "$RESOURCE_GROUP" -n "$cosmos" --query documentEndpoint -o tsv)" >> "$GITHUB_ENV"
+
+      - name: The function reaches Cosmos DB through the private endpoint
+        run: |
+          # Retries cover the cold start and DNS propagation of the private zone after the deployment.
+          response=$(curl -fsS --retry 12 --retry-all-errors --retry-delay 10 -X POST \
+            "${{ steps.infra.outputs.api_base_url }}/visits?id=smoke")
+          echo "POST /api/visits?id=smoke -> $response" | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -e '.count >= 1' <<< "$response" > /dev/null
+
+      - name: Cosmos DB refuses the public internet
+        run: node scripts/probe-cosmos-public.mjs "$COSMOS_ENDPOINT" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Tear down
+        if: always()
+        run: |
+          # Delete every resource in the resource group; repeat because some depend on others
+          # (private endpoint before subnet, DNS link before zone). The resource group itself, its role
+          # assignments and policy assignments stay for the next run.
+          for attempt in $(seq 1 8); do
+            ids=$(az resource list -g "$RESOURCE_GROUP" --query "[].id" -o tsv)
+            [[ -z "$ids" ]] && { echo "Resource group empty after $attempt pass(es)" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }
+            az resource delete --ids $ids --only-show-errors || true
+          done
+          echo "::error::resources left in $RESOURCE_GROUP"; az resource list -g "$RESOURCE_GROUP" -o table; exit 1
