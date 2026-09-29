@@ -112,6 +112,17 @@ replicated through Entra ID yet. Together with the Cosmos DB lock on the first p
 transient platform errors, so deployments now go through `scripts/deploy-infra.sh`, which retries exactly these
 two messages and fails on anything else.
 
+The third run, [36565910686](https://github.com/314159DD/azure-cloud-resume/actions/runs/36565910686)
+(2026-09-29, 12:06 to 12:25 UTC), deployed on the first attempt in 13 min 18 s and passed every check again. The
+tear-down went red with two resources left, the Static Web App and the Cosmos DB account. Both deletes had been
+accepted in the first pass: Cosmos DB answered the later passes with "There is already an operation in progress
+which requires exclusive lock", and the Static Web App delete failed only while polling its operation status at
+subscription scope, which the resource-group-scoped identity cannot read. The eight passes ran within three minutes
+without waiting, so the step gave up while Azure was still deleting. Both finished on their own: the Cosmos DB
+account was gone at 12:36, 13 minutes after the delete started. The Static Web App already answered "NotFound" at
+12:26 but stayed in `az resource list` for longer. The step now starts deletes with `--no-wait`, checks once a
+minute for up to 30 minutes, and counts a listed resource as left only while `az resource show` still finds it.
+
 The first manual run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
 `Azure.NSG.LateralTraversal`), which is why the variant was deployed and tested a second time.
 
