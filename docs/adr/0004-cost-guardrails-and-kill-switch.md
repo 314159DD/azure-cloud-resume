@@ -36,7 +36,11 @@ Contributor role cannot create role definitions.
   offline. Here the availability of a visit count is worth less than an unbounded bill. A service that must stay
   up would rate-limit per client in front of the API (Azure Front Door with a WAF rule, a paid option).
 - Someone has to restart a stopped app with `az functionapp start`. This is intended: a person should look at the
-  traffic first.
+  traffic first, and restart only once the alert has resolved. The alerts are stateful, so an alert that is still
+  "Fired" does not notify again; an app restarted during an ongoing flood would run without the burst alert's
+  protection until the alert resolves and fires again (see docs/runbook.md).
+- In staging, Cosmos DB runs serverless and has no provisioned throughput to cap. There, spending on the database
+  is bounded by the function's scale caps (it is the only client), the kill switch and the environment's budget.
 - Action groups notify the Logic App when an alert fires and again when it resolves. The first version stopped the
   app on every call, so the "Resolved" notification stopped an app that had just been restarted. The workflow now
   checks `monitorCondition` in the common alert schema and only acts on alerts that are not resolved.

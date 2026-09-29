@@ -16,7 +16,8 @@
   Run once per environment; each gets its own resource group, identity and OIDC subject:
     ./bootstrap.ps1 -Environment production -ResourceGroup rg-cloudresume
     ./bootstrap.ps1 -Environment staging    -ResourceGroup rg-cloudresume-staging
-    ./bootstrap.ps1 -Environment test       -ResourceGroup rg-cloudresume-nettest -SkipGitHubIdentity
+    ./bootstrap.ps1 -Environment network-test -ResourceGroup rg-cloudresume-nettest
+    ./bootstrap.ps1 -Environment test -ResourceGroup <throwaway-rg> -SkipGitHubIdentity   # manual experiments
 
   Idempotent: safe to run again, e.g. after the list of allowed roles changes.
 #>
