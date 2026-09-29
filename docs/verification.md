@@ -97,7 +97,15 @@ Deployed twice with `infra/environments/private-network-test.bicepparam` into th
 | Cosmos DB from the internet (developer PC, Entra token) | HTTP 403: "Request originated from IP … through public internet. This is blocked by your Cosmos DB account firewall settings." | same 403 |
 | Resource group deleted | 22:50 to 23:07 | after the re-test |
 
-The first run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
+Since pull request #4 the same test runs as the **Private network test** workflow. First run,
+[36501356823](https://github.com/314159DD/azure-cloud-resume/actions/runs/36501356823): deployment, network
+configuration check (`publicNetworkAccess: Disabled`, private endpoint `Approved`, function in `subnets/app`),
+counter through the private endpoint and the public-internet 403 all passed. The tear-down step failed and deleted
+nothing: Application Insights creates an alert rule named "Failure Anomalies - …", and the unquoted list of
+resource IDs was split on its spaces. The resources were deleted by hand right after, the step now reads the IDs
+into an array, and the workflow was run again (see below).
+
+The first manual run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
 `Azure.NSG.LateralTraversal`), which is why the variant was deployed and tested a second time.
 
 ## First pipeline runs
