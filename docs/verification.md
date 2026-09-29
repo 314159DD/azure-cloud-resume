@@ -10,7 +10,7 @@ meant to be run on purpose.
 | Keys stay off, no Owner escalation, no basic publishing credentials | [`scripts/verify-guardrails.sh`](../scripts/verify-guardrails.sh), or the **Verify guardrails** workflow | no |
 | Throttling and kill switch | [`scripts/flood-test.sh`](../scripts/flood-test.sh) | yes, stops the API |
 | Cosmos DB adapter (patch `incr`, 404, create race) | `npm run test:integration` against the emulator (CI job "API integration") | no |
-| Private networking variant | deploy `infra/environments/private-network-test.bicepparam` to a throwaway resource group | no (separate resource group) |
+| Private networking variant | the **Private network test** workflow (deploys, verifies, tears down) | no (separate resource group) |
 
 ## Atomic counter
 
@@ -21,9 +21,8 @@ meant to be run on purpose.
 
 ## No fallback to keys
 
-- 18:58: deleted the function's Cosmos DB data-plane role assignment. The next request returned HTTP 500
-  (`Counter unavailable`). There is no key to fall back to. (The handler answered 500 at that point; it now
-  returns 503 for the same failure.)
+- 18:58: deleted the function's Cosmos DB data-plane role assignment. The next request failed
+  (`Counter unavailable`). There is no key to fall back to.
 - `az deployment group what-if` then listed exactly one `Create`: the missing role assignment (drift detected).
 - 19:01: redeploy, the API answered 200 again.
 

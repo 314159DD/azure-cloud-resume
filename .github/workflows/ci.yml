@@ -43,7 +43,8 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       cosmos:
-        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
+        # Pinned by digest (vnext-latest as of 2026-09-29) so the test environment cannot change underneath us.
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator@sha256:2db1f9e74c506bcf6fc347aa937aea1c00fa756061296a5a9efba530ce86ec02
         ports:
           - 8081:8081
           - 8080:8080
