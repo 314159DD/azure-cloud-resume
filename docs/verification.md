@@ -1,6 +1,6 @@
 # Verification log
 
-What was tested against the live deployment, how, and what came out. Times are UTC, all on 2026-09-28.
+What was tested against the live deployment, how, and what came out. Times are UTC, on 2026-09-28 unless a date is given.
 Checks that can be repeated without disruption are scripted; the disruptive ones are scripted too but
 meant to be run on purpose.
 
@@ -138,7 +138,7 @@ and still passed, because the step piped the probe into `tee` and the default sh
 `pipefail`. The first and third runs printed the same line. So the public-internet 403 was never shown by the
 workflow, only by the manual test from a developer PC in the table above. The probe itself did not reach Cosmos
 DB: it needs a new Entra token for Cosmos DB 14 minutes after `azure/login`, when the federated credential from
-the GitHub OIDC token has expired. Changes: both Azure workflows set `shell: bash` (which adds `pipefail`), and the
+the GitHub OIDC token has expired. Changes: the Azure workflows (deploy, network test and verify) set `shell: bash` (which adds `pipefail`), and the
 network test signs in again right before the probe.
 
 The fifth run, [36574307186](https://github.com/314159DD/azure-cloud-resume/actions/runs/36574307186)

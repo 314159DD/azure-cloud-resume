@@ -80,8 +80,10 @@ Each of the function's three data-plane roles is scoped to a single resource, an
 database. The kill switch holds a custom role on the function app that allows read, stop and start, and nothing
 else.
 
-GitHub Actions signs in via OIDC, and Azure trusts one subject: the `production` environment, which only accepts
-deployments from `main` after CI has passed and after a required reviewer approves the run. In a one-person
+GitHub Actions signs in via OIDC. Each GitHub environment (`production`, `staging`, `network-test`) has its own Entra
+identity that trusts only that environment's subject and holds roles on that environment's resource group alone, so
+a staging run cannot touch production. The `production` environment only accepts deployments from `main` after CI
+has passed and after a required reviewer approves the run. In a one-person
 repository the reviewer is the author, so the approval is a deliberate pause before production, not a
 four-eyes check; with a team the same rule becomes one. On the resource group the pipeline is Contributor plus RBAC
 administrator, and an ABAC condition limits the second role to the three Azure RBAC roles the templates assign,
@@ -160,6 +162,12 @@ You need the Azure CLI, Node 22 and an Azure subscription where you are Owner.
 Pull requests and pushes run lint, typecheck, unit tests, the Cosmos DB emulator integration tests, `npm audit`,
 Bicep build and lint, and PSRule for Azure over every environment's parameter file.
 
+Every deploy logs a warning from `Azure/functions-action`: "Neither AzureWebJobsStorage nor
+AzureWebJobsStorage__accountName exist in app settings". It is expected. The function's host storage is configured
+with `AzureWebJobsStorage__credential`, `__clientId` and `__blobServiceUri`, and the action's source only checks for
+the two names in the warning. The package is uploaded to the deployment container set in
+`functionAppConfig.deployment.storage` ([`functionapp.bicep`](infra/modules/functionapp.bicep)).
+
 For local development run `cd api && npm ci && npm test` (integration tests: start the emulator and run
 `COSMOS_EMULATOR_ENDPOINT=http://localhost:8081 npm run test:integration`). To remove an environment, run
 `./scripts/teardown.ps1 -ResourceGroup <name>`.
@@ -181,6 +189,10 @@ with its reason in [`ps-rule.yaml`](ps-rule.yaml):
   counter offline until someone restarts it. For a resume that is the right trade (availability of a visit count
   against an open-ended bill). A workload that must stay up would put Azure Front Door with a WAF rate-limit rule
   in front of the API, which costs a monthly base fee.
+- The visitor count is easy to inflate. The site skips repeat counting only through `sessionStorage`, and anyone can
+  POST to the API, so the number counts page loads per browser session and not unique people. Nobody relies on it as
+  a metric, and the scale caps, throttling and the kill switch bound what abuse can cost. The `smoke` counter id
+  exists so the smoke test does not touch the public count; like the public counter, it accepts writes from anyone.
 - Data stays in Germany West Central. The Static Web Apps Free plan is not offered there, so the site resource
   lives in East US 2; the content is served globally either way.
 
