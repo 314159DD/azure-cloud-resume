@@ -18,6 +18,10 @@ jobs:
         environment: [staging, production]
     runs-on: ubuntu-24.04
     environment: ${{ matrix.environment }}
+    defaults:
+      run:
+        # Explicit bash adds -o pipefail, so a failing script is not hidden behind `| tee`.
+        shell: bash
     permissions:
       contents: read
       id-token: write # OIDC token for azure/login, no secret involved

@@ -20,6 +20,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     environment: network-test
+    defaults:
+      run:
+        # Explicit bash adds -o pipefail: without it, `cmd | tee` reports tee's exit code and a failing check
+        # passes silently (the public-internet probe did exactly that in runs 1 to 4).
+        shell: bash
     permissions:
       contents: read
       id-token: write # OIDC token for azure/login, no secret involved
@@ -86,6 +91,16 @@ jobs:
           echo "POST /api/visits?id=smoke -> $response" | tee -a "$GITHUB_STEP_SUMMARY"
           jq -e '.count >= 1' <<< "$response" > /dev/null
 
+      # The first login's federated credential has expired by now (the deployment alone takes 13 minutes). ARM
+      # calls still work on the access token cached at login, but the probe needs a new token for Cosmos DB,
+      # and the Azure CLI answered "Please run 'az login'". A fresh login gets a new GitHub OIDC token.
+      - name: Sign in again for a fresh token
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Cosmos DB refuses the public internet
         run: node scripts/probe-cosmos-public.mjs "$COSMOS_ENDPOINT" | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -94,7 +109,7 @@ jobs:
         run: |
           # Delete every resource in the resource group and wait until none is left. The resource group
           # itself, its role assignments and policy assignments stay for the next run.
-          # Deletes are started with --no-wait and repeated once a minute: some resources depend on
+          # Deletes are started with --no-wait and repeated a minute after each pass: some resources depend on
           # others (private endpoint before subnet, DNS link before zone) and fail until those are gone,
           # the Cosmos DB account takes 10 to 15 minutes, and a synchronous Static Web App delete polls
           # an operation status at subscription scope that the resource-group-scoped identity cannot read.
@@ -110,7 +125,7 @@ jobs:
               if (( rc != 3 )); then left+=("$id"); fi
             done
             if (( ${#left[@]} == 0 )); then
-              echo "Resource group empty after $((attempt - 1)) minute(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "Resource group empty after $((attempt - 1)) deletion pass(es), $((SECONDS / 60)) min $((SECONDS % 60)) s" | tee -a "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             echo "Check $attempt: ${#left[@]} resources left, (re)starting their deletion"
