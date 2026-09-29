@@ -63,12 +63,8 @@ jobs:
       - name: Deploy infrastructure (Bicep)
         id: infra
         run: |
-          outputs=$(az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "deploy-${GITHUB_RUN_NUMBER}" \
-            --template-file infra/main.bicep \
-            --parameters "$PARAMETERS" \
-            --query properties.outputs --output json)
+          # Retries only known transient platform errors (see the script).
+          outputs=$(./scripts/deploy-infra.sh "$RESOURCE_GROUP" "deploy-${GITHUB_RUN_NUMBER}" "$PARAMETERS")
           # Output names are camelCase on purpose: ARM rewrites the casing of all-caps names.
           jq -e '.functionAppName.value and .staticWebAppName.value and .apiBaseUrl.value and .siteUrl.value' \
             <<< "$outputs" > /dev/null || { echo "::error::deployment outputs missing"; exit 1; }
