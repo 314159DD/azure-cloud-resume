@@ -140,14 +140,18 @@ You need the Azure CLI, Node 22 and an Azure subscription where you are Owner.
    assignments, the kill switch's custom role and the policy assignments.
    ```powershell
    az login
-   ./scripts/bootstrap.ps1 -Environment staging    -ResourceGroup rg-cloudresume-staging -GitHubRepo <owner>/<repo>
-   ./scripts/bootstrap.ps1 -Environment production -ResourceGroup rg-cloudresume         -GitHubRepo <owner>/<repo>
+   ./scripts/bootstrap.ps1 -Environment staging      -ResourceGroup rg-cloudresume-staging -GitHubRepo <owner>/<repo>
+   ./scripts/bootstrap.ps1 -Environment production   -ResourceGroup rg-cloudresume         -GitHubRepo <owner>/<repo>
+   ./scripts/bootstrap.ps1 -Environment network-test -ResourceGroup rg-cloudresume-nettest -GitHubRepo <owner>/<repo>
    ```
-2. In the repository settings, create the environments `staging` and `production`, both limited to the `main`
-   branch, production with a required reviewer. Set `AZURE_CLIENT_ID` and `AZURE_RESOURCE_GROUP` on each
-   environment and `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` on the repository (the bootstrap prints them).
-   These values identify resources; they grant no access. `BUDGET_ALERT_EMAIL` is a repository secret only so the
-   address is masked in public workflow logs.
+2. Configure GitHub with [`scripts/configure-github.sh`](scripts/configure-github.sh), passing the client ids the
+   bootstrap printed. It creates the environments `staging`, `production` and `network-test` (all limited to
+   `main`; production and the billed network test with a required reviewer), sets `AZURE_CLIENT_ID` and
+   `AZURE_RESOURCE_GROUP` per environment and `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` on the repository, and
+   protects `main`: changes only through pull requests with green CI, enforced for administrators too. These
+   values identify resources; they grant no access. `BUDGET_ALERT_EMAIL` is a repository secret only so the
+   address is masked in public workflow logs. The subscription-level part stays imperative on purpose: federated
+   credentials and app registrations live in Entra ID, which ARM templates do not manage.
 3. Push to `main`. After CI passes, `deploy.yml` deploys staging and runs the smoke test there, then waits for the
    reviewer and does the same for production. Each environment's `what-if` summary is on the run page. For
    production it comes after the approval, because `what-if` needs the deploy identity's write permission, which
@@ -187,12 +191,13 @@ api/                 Azure Function (TypeScript): domain logic, Cosmos adapter, 
 web/                 Static site (EN/DE), security headers
 infra/               Bicep: main.bicep, modules (monitoring, storage, cosmos, network, functionapp, staticwebapp,
                      killswitch, workbook, budget) and environments/*.bicepparam
-scripts/             bootstrap, teardown, smoke test, guardrail and flood tests, what-if summary
+scripts/             bootstrap, GitHub configuration, teardown, smoke/guardrail/flood tests, public-access probe,
+                     what-if summary
 tools/               pinned deployment tooling (Static Web Apps CLI)
 docs/adr/            Architecture decision records
 docs/runbook.md      What to do when the kill switch fires
 docs/verification.md What was tested against the live system, with results
-.github/workflows/   CI, deploy (staging, then production), guardrail verification, CodeQL
+.github/workflows/   CI, deploy (staging, then production), guardrail verification, private-network test, CodeQL
 ```
 
 ## How this was built
