@@ -6,3 +6,4 @@ web/config.js
 *.zip
 .env
 __pycache__/
+deploy-error.log
