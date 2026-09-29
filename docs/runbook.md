@@ -51,8 +51,10 @@ az functionapp start -g $RG -n $FUNC
 ./scripts/smoke-test.sh "https://$FUNC.azurewebsites.net/api" "<site url from the README>"
 ```
 
-The kill switch ignores the alert's "Resolved" notification, so restarting while the alert is still open is
-safe; if traffic continues, the alert fires again and the app stops again, which is the intended behaviour.
+Restart only after the alert shows "Resolved" (step 1). The alerts are stateful: while one is in the "Fired"
+state it does not notify again, so an app restarted during an ongoing flood would stay up without the burst
+alert's protection until that alert resolves and fires anew (the 24-hour alert and the budget still apply).
+The kill switch ignores the "Resolved" notification itself, so waiting for it does not stop the app again.
 
 ## 5. Afterwards
 
