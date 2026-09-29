@@ -1,0 +1,46 @@
+# Hourly uptime check of the production site and its API, from outside Azure. It needs no login and no secret:
+# it requests the public site, reads the API address from the site's own /config.js (written at deploy time)
+# and reads the public counter with GET, which never increments it.
+# GitHub e-mails the repository owner when a scheduled run fails, and the run history is public evidence of
+# uptime. This is a deliberate substitute for an Application Insights standard availability test, which bills
+# per execution from several locations; that is more than a visitor counter is worth. The classic URL ping
+# test is deprecated.
+# GitHub disables scheduled workflows in a public repository after 60 days without repository activity. Any
+# push or a manual run of this workflow starts them again.
+name: Health check
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SITE_URL: https://victorious-glacier-013ec1c0f.6.azurestaticapps.net
+
+jobs:
+  health:
+    name: Health check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        # Explicit bash adds -o pipefail, so a failing curl is not hidden behind a pipe.
+        shell: bash
+    steps:
+      - name: Check site and API
+        run: |
+          fail() { echo "::error::$*"; echo "Health check FAILED: $*" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+          # Retries cover the cold start of the function.
+          fetch() { curl -fsS --retry 5 --retry-all-errors --retry-delay 10 --max-time 30 "$@"; }
+
+          fetch -o /dev/null "$SITE_URL/" || fail "site did not return 200"
+          api=$(fetch "$SITE_URL/config.js" | sed -nE 's/.*CLOUDRESUME_API = "([^"]+)".*/\1/p')
+          [[ "$api" =~ ^https://[^/]+/api$ ]] || fail "API address not found in $SITE_URL/config.js"
+
+          count=$(fetch "$api/visits" | jq -r .count) || fail "GET $api/visits failed"
+          [[ "$count" =~ ^[0-9]+$ ]] || fail "counter is not a number: $count"
+
+          echo "Health check OK at $(date -u +%FT%TZ): site 200, GET $api/visits 200, count $count" >> "$GITHUB_STEP_SUMMARY"
