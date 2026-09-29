@@ -112,11 +112,12 @@ being flooded:
 | Static site | none | Free plan | hard |
 | All resources | none | budget: e-mail at 20 %, forecast alert, kill switch at 100 % | automated, lags by hours |
 
-The kill switch only watches volume. A separate alert e-mails the owner (without stopping anything) when more than 5
-API requests fail within 15 minutes, and an hourly **Health check** workflow reads the live site and the public
-counter from outside Azure, so a failing run e-mails the owner too. Its run history serves as public uptime evidence.
-The **Verify guardrails** workflow also runs weekly against staging. Neither the alert nor the workflows have run
-against the live system yet; see [the runbook](docs/runbook.md) for what to do when they fire.
+The kill switch only watches volume. A separate alert e-mails the owner (without stopping anything) when more than
+5 API requests end in a server error (5xx) within 15 minutes, and an hourly **Health check** workflow reads the
+live site and the public counter from outside Azure, so a failing run e-mails the owner too. Its run history serves
+as public uptime evidence. The **Verify guardrails** workflow also runs weekly against staging. Neither the alert
+nor the workflows have run against the live system yet; see [the runbook](docs/runbook.md) for what to do when they
+fire.
 
 ## Verified behaviour
 
