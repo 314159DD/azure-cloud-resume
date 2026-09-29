@@ -39,3 +39,11 @@ pull requests would also be useful.
 - Reviewers see the infrastructure diff only after merging, in the deploy run. For this repository that is an
   acceptable trade for keeping cloud access away from pull requests.
 - Adding a role to the templates means updating the condition in the bootstrap script on purpose.
+
+## Update, 2026-09-29
+
+The decision above was written for a single environment. [ADR 6](0006-staging-environment.md) and
+[ADR 7](0007-private-networking-variant.md) extended it to one Entra identity per GitHub environment
+(`production`, `staging`, `network-test`). Each identity trusts only its own `environment:<name>` subject and holds
+its roles on its own resource group, so a staging run cannot touch production. The rest of this ADR applies to each
+identity unchanged.
