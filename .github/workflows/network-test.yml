@@ -43,12 +43,10 @@ jobs:
         id: infra
         run: |
           start=$(date +%s)
-          outputs=$(az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "network-test-${GITHUB_RUN_NUMBER}" \
-            --template-file infra/main.bicep \
-            --parameters infra/environments/private-network-test.bicepparam \
-            --query properties.outputs --output json)
+          # Every run recreates the managed identity, so the Entra ID replication delay is expected here;
+          # the script retries it (and other known transient errors) and fails on anything else.
+          outputs=$(./scripts/deploy-infra.sh "$RESOURCE_GROUP" "network-test-${GITHUB_RUN_NUMBER}" \
+            infra/environments/private-network-test.bicepparam)
           echo "function_app=$(jq -r .functionAppName.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
           echo "api_base_url=$(jq -r .apiBaseUrl.value <<< "$outputs")" >> "$GITHUB_OUTPUT"
           echo "Deployment took $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
