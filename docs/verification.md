@@ -13,6 +13,19 @@ meant to be run on purpose.
 | Cosmos DB adapter (patch `incr`, 404, create race) | `npm run test:integration` against the emulator (CI job "API integration") | no |
 | Private networking variant | the **Private network test** workflow (deploys, verifies, tears down) | no (separate resource group) |
 
+## Monitoring for a failing API
+
+Added on 2026-09-29 after two outside reviews pointed out that only traffic volume was watched.
+
+- The failed-request alert was deployed with Deploy run
+  [36587409672](https://github.com/314159DD/azure-cloud-resume/actions/runs/36587409672). `az monitor metrics alert
+  list` shows `alert-…-failed-requests` enabled in production and staging, filtered on result codes 500, 502, 503
+  and 504, with the e-mail-only action group `ag-…-ops`. It has not fired yet.
+- First **Health check** run, [36589167905](https://github.com/314159DD/azure-cloud-resume/actions/runs/36589167905)
+  (15:18): green. The same script run locally printed `site 200, GET …/api/visits 200, count 51` and exited 0; with
+  a wrong site URL it exited 1 with "site did not return 200", and against an unreachable API host the GET step
+  failed as well.
+
 ## Atomic counter
 
 - 20 concurrent POSTs against the deployed API raised the public counter from 2 to 22 (18:37). The smoke test
