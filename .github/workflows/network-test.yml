@@ -97,9 +97,15 @@ jobs:
           # Delete every resource in the resource group; repeat because some depend on others
           # (private endpoint before subnet, DNS link before zone). The resource group itself, its role
           # assignments and policy assignments stay for the next run.
+          # IDs are read into an array line by line: Application Insights adds an alert rule named
+          # "Failure Anomalies - <name>", and word splitting on its spaces broke every delete call once.
           for attempt in $(seq 1 8); do
-            ids=$(az resource list -g "$RESOURCE_GROUP" --query "[].id" -o tsv)
-            [[ -z "$ids" ]] && { echo "Resource group empty after $attempt pass(es)" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }
-            az resource delete --ids $ids --only-show-errors || true
+            mapfile -t ids < <(az resource list -g "$RESOURCE_GROUP" --query "[].id" -o tsv)
+            if (( ${#ids[@]} == 0 )); then
+              echo "Resource group empty after $((attempt - 1)) deletion pass(es)" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Pass $attempt: deleting ${#ids[@]} resources"
+            az resource delete --ids "${ids[@]}" --only-show-errors || true
           done
           echo "::error::resources left in $RESOURCE_GROUP"; az resource list -g "$RESOURCE_GROUP" -o table; exit 1
