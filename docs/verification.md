@@ -100,7 +100,8 @@ Deployed twice with `infra/environments/private-network-test.bicepparam` into th
 Since pull request #4 the same test runs as the **Private network test** workflow. First run,
 [36501356823](https://github.com/314159DD/azure-cloud-resume/actions/runs/36501356823): deployment, network
 configuration check (`publicNetworkAccess: Disabled`, private endpoint `Approved`, function in `subnets/app`),
-counter through the private endpoint and the public-internet 403 all passed. The tear-down step failed and deleted
+and counter through the private endpoint passed. The public-internet check only looked green (see the fourth run
+below). The tear-down step failed and deleted
 nothing: Application Insights creates an alert rule named "Failure Anomalies - …", and the unquoted list of
 resource IDs was split on its spaces. The resources were deleted by hand right after, the step now reads the IDs
 into an array, and the workflow was run again.
@@ -113,15 +114,32 @@ transient platform errors, so deployments now go through `scripts/deploy-infra.s
 two messages and fails on anything else.
 
 The third run, [36565910686](https://github.com/314159DD/azure-cloud-resume/actions/runs/36565910686)
-(2026-09-29, 12:06 to 12:25 UTC), deployed on the first attempt in 13 min 18 s and passed every check again. The
+(2026-09-29, 12:06 to 12:25 UTC), deployed on the first attempt in 13 min 18 s and passed the configuration and counter checks. The
 tear-down went red with two resources left, the Static Web App and the Cosmos DB account. Both deletes had been
 accepted in the first pass: Cosmos DB answered the later passes with "There is already an operation in progress
 which requires exclusive lock", and the Static Web App delete failed only while polling its operation status at
 subscription scope, which the resource-group-scoped identity cannot read. The eight passes ran within three minutes
 without waiting, so the step gave up while Azure was still deleting. Both finished on their own: the Cosmos DB
 account was gone at 12:36, 13 minutes after the delete started. The Static Web App already answered "NotFound" at
-12:26 but stayed in `az resource list` for longer. The step now starts deletes with `--no-wait`, checks once a
-minute for up to 30 minutes, and counts a listed resource as left only while `az resource show` still finds it.
+12:26 but stayed in `az resource list` for longer. The step now starts deletes with `--no-wait`, repeats up to 30
+passes a minute apart, and counts a listed resource as left only while `az resource show` still finds it.
+
+The fourth run, [36569580410](https://github.com/314159DD/azure-cloud-resume/actions/runs/36569580410)
+(2026-09-29, 12:39 to 13:15 UTC), finished green, including the tear-down (12:54 to 13:15, 21 resources, then 4,
+2 and none; the first pass took 17 minutes because some deletes block despite `--no-wait`). Reading its log
+before recording it showed that the green was not complete: the step "Cosmos DB refuses the public internet" had
+printed
+
+```
+FAIL: unexpected response (HTTP undefined): Please run 'az login' from a command prompt to authenticate before using this credential.
+```
+
+and still passed, because the step piped the probe into `tee` and the default shell of a `run` step has no
+`pipefail`. The first and third runs printed the same line. So the public-internet 403 was never shown by the
+workflow, only by the manual test from a developer PC in the table above. The probe itself did not reach Cosmos
+DB: it needs a new Entra token for Cosmos DB 14 minutes after `azure/login`, when the federated credential from
+the GitHub OIDC token has expired. Changes: both Azure workflows set `shell: bash` (which adds `pipefail`), and the
+network test signs in again right before the probe.
 
 The first manual run was made before NSGs were added (PSRule for Azure flagged `Azure.VNET.UseNSGs` and
 `Azure.NSG.LateralTraversal`), which is why the variant was deployed and tested a second time.
