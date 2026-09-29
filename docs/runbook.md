@@ -63,8 +63,8 @@ The kill switch ignores the "Resolved" notification itself, so waiting for it do
 
 # Runbook: the API is failing but was not stopped
 
-You received an e-mail from the `ag-…-ops` action group (alert `alert-…-failed-requests`: more than 5 failed
-requests in 15 minutes), or the hourly **Health check** workflow failed. The kill switch did not fire, so the traffic
+You received an e-mail from the `ag-…-ops` action group (alert `alert-…-failed-requests`: more than 5 server
+errors (5xx) in 15 minutes), or the hourly **Health check** workflow failed. The kill switch did not fire, so the traffic
 volume is normal and the API itself is failing. The alert only notifies; it never stops the app.
 
 ## 1. Confirm
