@@ -79,7 +79,7 @@ foreach ($ns in 'Microsoft.Web', 'Microsoft.DocumentDB', 'Microsoft.Storage', 'M
 # 2) Resource group: the boundary for access, cost and teardown. Its location only holds metadata;
 #    the templates choose the region of each resource.
 if ((Invoke-Az group exists -n $ResourceGroup) -ne 'true') {
-  Invoke-Az group create -n $ResourceGroup -l $Location --tags project=cloudresume owner=steven environment=$Environment -o none
+  Invoke-Az group create -n $ResourceGroup -l $Location --tags project=cloudresume owner=steven environment=$Environment env=$Environment -o none
 }
 $rgId = Invoke-Az group show -n $ResourceGroup --query id -o tsv
 
