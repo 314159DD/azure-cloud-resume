@@ -12,9 +12,9 @@
     "test:integration": "tsc && node --test \"dist/integration/**/*.test.js\""
   },
   "dependencies": {
-    "@azure/cosmos": "^4.10.1",
-    "@azure/functions": "^4.16.5",
-    "@azure/identity": "^4.13.3"
+    "@azure/cosmos": "^4.10.2",
+    "@azure/functions": "^4.17.1",
+    "@azure/identity": "^4.14.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
